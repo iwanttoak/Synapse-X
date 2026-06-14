@@ -15,5 +15,6 @@ project(SynapseX
 #  共享头文件 (shared/) 通过相对路径 ../shared/ 被双方引用。
 # ═══════════════════════════════════════════════════════════════
 
-# 仅提供 shared 头文件库的 IDE 索引（不参与实际编译产出）
+# 提供 shared 头文件库和 client 模块的 IDE 索引（不参与实际编译产出）
 add_subdirectory(shared)
+add_subdirectory(client)
