@@ -295,7 +295,7 @@ Synapse-X/                          # mono-repo root
 │
 ├── shared/                         # shared between Host and Client
 │   └── include/
-│       └── PacketHeader.h          # wire protocol (16-byte header)
+│       └── PacketHeader.h          # wire protocol (20-byte header)
 │
 ├── host/                           # Host sender (this machine)
 │   ├── CMakeLists.txt              # standalone CMake project
@@ -351,45 +351,64 @@ cmake --build build_x64 --config RelWithDebInfo
 # Binary: build_x64/RelWithDebInfo/SynapseX_Host.exe
 ```
 
-Run: `.\SynapseX_Host.exe [target_ip] [port]` (defaults: 127.0.0.1:8888)
+Run: `.\SynapseX_Host.exe [target_ip] [port] [width] [height]` (defaults: 192.168.100.2:8888 640x640)
 
 ---
 
-## 9. Breaking Change — Client MUST Adapt
+## 9. Protocol Change History
 
-The protocol header changed from **16 → 20 bytes** (added `width` + `height` fields).
-The current Client code (`client/`) hardcodes 640×640 and assumes a 16-byte header.
-**If you run the new Host against the old Client, it will read garbage.**
+**v2 (current): 20-byte header** — added `width` and `height` fields (offset 16, 18).
+Client has been adapted. The header is present in every UDP packet;
+Client reads dimensions from any chunk to size the decompression buffer.
 
-### Client-side changes required
+**v1 (deprecated): 16-byte header** — no dimension fields. Client hardcoded 640×640.
 
-| File | Change |
-|------|--------|
-| `shared/include/PacketHeader.h` | **Sync** this file to get the 20-byte header with width/height |
-| `client/include/ReassemblyBuffer.h` | Remove `kRawFrameSize`, `kMaxCompressedSize`, `kMaxChunks` hardcoded to 640². Make them dynamic or compute from header. |
-| `client/src/UdpReceiver.cpp` | `Initialize()`: don't pre-allocate `m_decompressBuf` to a fixed size — allocate in `DecompressCurrentFrame()` using `width × height × 4` from the header. |
-| `client/src/UdpReceiver.cpp` | `DecompressCurrentFrame()`: use `header.width * header.height * 4` instead of `kRawFrameSize` for verification. |
-| `client/src/main.cpp` | Read `width`/`height` from the first successful frame instead of `constexpr int ROI_W = 640`. Use dynamic sizes in `SaveBgraAsBmp()` and the status print. |
+---
 
-### Key pattern for Client decompression
+## 10. Deployment Configuration
 
-```cpp
-// OLD (hardcoded):
-int maxDecompressed = 640 * 640 * 4;         // 1,638,400
-int result = LZ4_decompress_safe(src, dst, compressedSize, maxDecompressed);
+The Host itself is **resolution-agnostic** — the CLI params control everything.
 
-// NEW (from header):
-int rawSize = header->width * header->height * 4;  // from PacketHeader
-// ... ensure dst buffer is resized to rawSize ...
-int result = LZ4_decompress_safe(src, dst, compressedSize, rawSize);
+| Scenario | Command | Notes |
+|----------|---------|-------|
+| **Current** (Client has 416 model) | `.\SynapseX_Host.exe 192.168.100.2 8888 416 416` | Match Client TRT engine |
+| **Future** (Client has 640 model) | `.\SynapseX_Host.exe 192.168.100.2 8888 640 640` | Or just `.\SynapseX_Host.exe` (default) |
+
+> The Client's TRT engine is compiled for a **fixed input size** and does NOT resize.
+> If Host ROI ≠ Client model size, the Client receives and decompresses correctly
+> but **skips inference** (one-time warning printed). Always match the sizes.
+
+---
+
+## 11. Coordinate Mapping (for inference results)
+
+When the Client returns detection bounding boxes, they are in **model pixel space**
+relative to the ROI, not screen space. The Host must map them back:
+
+```
+screen_x = roiX + detection_x
+screen_y = roiY + detection_y
+
+where:
+  roiX = (screenWidth  - roiWidth)  / 2   // center-crop offset
+  roiY = (screenHeight - roiHeight) / 2
 ```
 
-The `width` and `height` fields are present in **every** UDP packet — the Client can read
-them from any chunk of a frame, even before the frame is fully reassembled.
+Example: 3840×2160 screen, 416×416 ROI, detection at (100, 200) in model space:
+
+```
+roiX = (3840 - 416) / 2 = 1712
+roiY = (2160 - 416) / 2 = 872
+screen_x = 1712 + 100 = 1812
+screen_y = 872  + 200 = 1072
+```
+
+> This mapping is the **Host's responsibility**. The Client sends raw model-space
+> coordinates and does not know the screen resolution.
 
 ---
 
-## 10. Future: Host → Client response channel
+## 12. Future: Host ← Client response channel
 
 The current protocol is unidirectional (Host → Client). A future iteration will add:
 - A small UDP response packet from Client → Host (inference result: bounding box coordinates)

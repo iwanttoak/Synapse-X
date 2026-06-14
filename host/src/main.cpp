@@ -1,13 +1,14 @@
 // ─── Synapse-X Host -- Production main loop ─────────────────
 //
-// Pipeline (170 Hz target):
-//   DXGI center-ROI capture  ->  LZ4 compress  ->  UDP fragment & send
+// Fixed 170 Hz pipeline:
+//   DXGI capture (try every tick)
+//     -> new frame?  LZ4 compress + update cache
+//     -> no change?  re-send cached compressed frame
+//   UDP fragment & send (every tick)
 //
 // Usage:
 //   SynapseX_Host.exe [target_ip] [port] [roi_w] [roi_h]
 //   Defaults: 192.168.100.2  8888   640     640
-//
-// Stats printed every second: actual FPS + per-stage avg latency.
 
 #include "DxgiCapturer.h"
 #include "Lz4Compressor.h"
@@ -20,6 +21,11 @@
 #include <atomic>
 #include <thread>
 
+#include <windows.h>    // timeBeginPeriod / timeEndPeriod
+#include <mmsystem.h>   // (link winmm.lib)
+
+#pragma comment(lib, "winmm.lib")
+
 static std::atomic<bool> g_running{true};
 
 using Clock     = std::chrono::high_resolution_clock;
@@ -30,9 +36,9 @@ static inline double ToMs(Clock::duration d) {
 }
 
 struct PerfStats {
-    int    captured    = 0;
-    int    sent        = 0;
-    double sumCapture  = 0.0;
+    int    captured    = 0;    // new frames from DXGI this window
+    int    sent        = 0;    // total UDP sends this window
+    double sumCapture  = 0.0;  // only measured on new frames
     double sumCompress = 0.0;
     double sumSend     = 0.0;
 
@@ -59,11 +65,21 @@ int main(int argc, char* argv[]) {
 
     int rawSize = roiW * roiH * 4;
 
+    // ── Fixed 170 Hz cadence ──────────────────────────────
+    constexpr double kTargetFps  = 170.0;
+    constexpr double kTargetMs   = 1000.0 / kTargetFps;   // ~5.882 ms
+    const auto       kInterval   = std::chrono::duration<double, std::milli>(kTargetMs);
+
+    // Boost Windows timer resolution.
+    // Default is 15.6 ms — way too coarse for 5.88 ms ticks.
+    timeBeginPeriod(1);
+
     fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  Synapse-X Host -- Production Pipeline\n");
+    fprintf(stderr, "  Synapse-X Host -- Fixed %.0f Hz Pipeline\n", kTargetFps);
     fprintf(stderr, "  Target: %s:%u\n", targetIp, targetPort);
-    fprintf(stderr, "  ROI:    %dx%d  (%.2f MB raw)\n", roiW, roiH, rawSize / (1024.0 * 1024.0));
-    fprintf(stderr, "  Target FPS: 170 Hz\n");
+    fprintf(stderr, "  ROI:    %dx%d  (%.2f MB raw)\n",
+            roiW, roiH, rawSize / (1024.0 * 1024.0));
+    fprintf(stderr, "  Budget: %.2f ms per frame\n", kTargetMs);
     fprintf(stderr, "============================================\n\n");
 
     // ── Stage 0: Init all modules ────────────────────────
@@ -90,9 +106,15 @@ int main(int argc, char* argv[]) {
 
     // ── Main loop state ──────────────────────────────────
     std::vector<uint8_t> rawBuffer;
-    std::vector<uint8_t> compressedBuffer;
     rawBuffer.reserve(rawSize);
+
+    std::vector<uint8_t> compressedBuffer;
     compressedBuffer.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
+
+    // Cached compressed frame — re-sent when desktop is idle.
+    std::vector<uint8_t> cachedCompressed;
+    cachedCompressed.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
+    bool hasCachedFrame = false;
 
     uint32_t    frameId       = 0;
     PerfStats   stats;
@@ -103,15 +125,19 @@ int main(int argc, char* argv[]) {
     const uint16_t roiW16 = static_cast<uint16_t>(roiW);
     const uint16_t roiH16 = static_cast<uint16_t>(roiH);
 
+    auto nextTick = Clock::now();
+
     // ═══════════════════════════════════════════════════════
-    //  MAIN LOOP
+    //  MAIN LOOP — Fixed 170 Hz
     // ═══════════════════════════════════════════════════════
     while (g_running) {
+        // ── Stage 1: Capture (try every tick) ─────────────
         auto t0 = Clock::now();
         bool gotFrame = capturer.CaptureFrame(rawBuffer);
         auto t1 = Clock::now();
 
         if (gotFrame) {
+            // ── Stage 2: Compress (only on new content) ───
             auto t2a = Clock::now();
             bool ok = compressor.Compress(rawBuffer.data(),
                                            static_cast<int>(rawBuffer.size()),
@@ -119,50 +145,71 @@ int main(int argc, char* argv[]) {
             auto t2b = Clock::now();
 
             if (ok) {
-                auto t3a = Clock::now();
-                bool sent = sender.SendCompressedFrame(
-                    compressedBuffer.data(),
-                    static_cast<uint32_t>(compressedBuffer.size()),
-                    frameId,
-                    roiW16,
-                    roiH16);
-                auto t3b = Clock::now();
-
-                if (sent) totalSent++;
+                // Update cache for future re-sends
+                cachedCompressed = compressedBuffer;
+                hasCachedFrame   = true;
 
                 stats.captured++;
-                stats.sent       += (sent ? 1 : 0);
                 stats.sumCapture  += ToMs(t1  - t0);
                 stats.sumCompress += ToMs(t2b - t2a);
-                stats.sumSend     += ToMs(t3b - t3a);
-                frameId++;
             }
-        } else {
-            std::this_thread::yield();
+        }
+
+        // ── Stage 3: Send (ALWAYS — reuses cache if idle) ──
+        if (hasCachedFrame) {
+            auto t3a = Clock::now();
+            bool sent = sender.SendCompressedFrame(
+                cachedCompressed.data(),
+                static_cast<uint32_t>(cachedCompressed.size()),
+                frameId,
+                roiW16, roiH16);
+            auto t3b = Clock::now();
+
+            if (sent) totalSent++;
+
+            stats.sent++;
+            stats.sumSend += ToMs(t3b - t3a);
+            frameId++;
         }
 
         // ── Per-second stats report ──────────────────────
         double elapsed = ToMs(Clock::now() - windowStart) / 1000.0;
         if (elapsed >= 1.0) {
-            double fps        = stats.captured / elapsed;
+            double sendFps    = stats.sent / elapsed;
+            double captureFps = stats.captured / elapsed;
             double avgCapture = stats.captured > 0 ? stats.sumCapture  / stats.captured : 0.0;
             double avgCompress= stats.captured > 0 ? stats.sumCompress / stats.captured : 0.0;
             double avgSend    = stats.sent     > 0 ? stats.sumSend     / stats.sent     : 0.0;
-            double avgTotal   = avgCapture + avgCompress + avgSend;
 
             fprintf(stderr,
                 "---- per-second stats --------------------------------\n"
-                "  FPS: %7.1f  |  sent: %5d / %5d frames  |  total: %lld\n"
-                "  capture: %8.3f ms  |  compress: %8.3f ms  |  send: %8.3f ms\n"
-                "  pipeline total: %5.2f ms  (budget: 5.88 ms @170Hz)\n",
-                fps, stats.sent, stats.captured, (long long)totalSent,
+                "  Send FPS: %6.1f  |  capture FPS: %6.1f  |  "
+                "fresh: %d  cache: %d  |  total: %lld\n"
+                "  capture: %8.3f ms  |  compress: %8.3f ms  |  "
+                "send: %8.3f ms\n"
+                "  budget: %5.2f ms @%.0f Hz\n",
+                sendFps, captureFps,
+                stats.captured, stats.sent - stats.captured,
+                (long long)totalSent,
                 avgCapture, avgCompress, avgSend,
-                avgTotal);
+                kTargetMs, kTargetFps);
 
             stats.reset();
             windowStart = Clock::now();
         }
+
+        // ── Maintain 170 Hz cadence ──────────────────────
+        nextTick += std::chrono::duration_cast<Clock::duration>(kInterval);
+        auto now = Clock::now();
+        if (nextTick > now) {
+            std::this_thread::sleep_until(nextTick);
+        } else {
+            // Fell behind schedule — reset to avoid death-spiral
+            nextTick = now;
+        }
     }
+
+    timeEndPeriod(1);
 
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
     fprintf(stderr, "\n[DONE] Session ended. %.1f sec, %lld frames sent, avg %.1f FPS\n",
