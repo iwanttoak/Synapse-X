@@ -13,7 +13,8 @@
 //   · Non-blocking socket with eager drain — process all queued
 //     packets in one TryReceive() call.
 //   · Zero heap allocation in TryReceive() after initial pre-allocation.
-//   · LZ4_decompress_safe output verified against 640×640×4 = 1,638,400.
+//   · Dynamic ROI: width/height extracted from PacketHeader each frame,
+//     LZ4 output verified against width×height×4.
 //   · Frame ID wrap-around handled safely (int32_t difference).
 //
 // The caller is responsible for calling TryReceive() at high
@@ -41,6 +42,8 @@ public:
     // ── Lifecycle ─────────────────────────────────────────
 
     // Bind UDP socket to `port`, pre-allocate all buffers.
+    // No ROI size needed — decompress buffer is resized per-frame
+    // based on the width/height in each PacketHeader.
     // Returns true on success.
     bool Initialize(uint16_t port = 8888);
 
@@ -56,12 +59,17 @@ public:
     // decompressed, the MOST RECENT one is returned in outFrame
     // with its frameId in outFrameId, and the function returns true.
     //
-    // outFrame: receives 640×640×4 BGRA pixel data on success.
+    // outFrame: receives width×height×4 BGRA pixel data on success.
     // outFrameId: receives the monotonic frame counter on success.
+    // Use GetLastFrameWidth()/GetLastFrameHeight() to interpret outFrame.
     //
     // Returns false if no complete frame is ready (normal — caller
     // should loop at high frequency).
     bool TryReceive(std::vector<uint8_t>& outFrame, uint32_t& outFrameId);
+
+    // ── Last frame dimensions (valid after TryReceive returns true) ─
+    uint16_t GetLastFrameWidth()  const { return m_lastFrameWidth; }
+    uint16_t GetLastFrameHeight() const { return m_lastFrameHeight; }
 
     // ── Stats ──────────────────────────────────────────────
 
@@ -77,7 +85,8 @@ private:
     bool ProcessDatagram(const uint8_t* data, int len);
 
     // Decompress the current reassembly buffer into outFrame.
-    // Returns true if decompression succeeded and output == 1,638,400 bytes.
+    // Dynamically resizes outFrame to frameWidth × frameHeight × 4.
+    // Returns true if decompression succeeded and output matches expected size.
     bool DecompressCurrentFrame(std::vector<uint8_t>& outFrame);
 
     // ── Socket ─────────────────────────────────────────────
@@ -85,20 +94,22 @@ private:
     bool   m_initialized = false;
     bool   m_wsaStarted  = false;
 
-    // ── Receive buffer (stack / member, NOT heap per-packet) ─
-    // 65536 bytes: well above any possible UDP datagram (~1416 bytes),
-    // and comfortably fits multiple queued packets if the OS delivers
-    // them in a single recvfrom call (unlikely with UDP, but safe).
+    // ── Receive buffer ─────────────────────────────────────
+    // 65536 bytes: well above max UDP datagram (20 + 1400 = 1420 bytes).
     static constexpr int kRecvBufSize = 65536;
     alignas(64) uint8_t m_recvBuf[kRecvBufSize];
 
     // ── Decompression output buffer ────────────────────────
-    // Pre-allocated to exactly 640×640×4 = 1,638,400 bytes.
-    // Reused every frame — no allocation in TryReceive.
+    // Resized dynamically per-frame to width×height×4.
+    // Reused across frames — only reallocates if ROI grows.
     std::vector<uint8_t> m_decompressBuf;
 
     // ── Reassembly state ───────────────────────────────────
     ReassemblyBuffer m_buffer;
+
+    // ── Last frame dimensions ──────────────────────────────
+    uint16_t m_lastFrameWidth  = 0;
+    uint16_t m_lastFrameHeight = 0;
 
     // ── Statistics ─────────────────────────────────────────
     uint64_t m_totalFramesReceived = 0;

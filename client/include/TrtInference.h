@@ -1,0 +1,83 @@
+#pragma once
+
+// ─── TrtInference ──────────────────────────────────────────────
+// TensorRT inference wrapper for Synapse-X Client pipeline.
+//
+// Usage:
+//   TrtInference trt;
+//   trt.Initialize("model/bf416.engine");
+//   std::vector<Detection> dets = trt.Infer(bgraPixels, 0.25f);
+//
+// Threading: NOT thread-safe. Use from the same thread as UdpReceiver.
+//
+// Input:  BGRA uint8 pixels, modelWidth × modelHeight (e.g. 416×416)
+// Output: vector of Detection { x1, y1, x2, y2, confidence, classId }
+//         Coordinates are in model pixel space [0, modelW) × [0, modelH).
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace SynapseX {
+
+// ── Detection result ────────────────────────────────────────
+struct Detection {
+    float x1, y1;         // top-left corner (model pixel coords, no scaling)
+    float x2, y2;         // bottom-right corner
+    float confidence;
+    int   classId;
+};
+
+// ── TensorRT inference engine ───────────────────────────────
+class TrtInference {
+public:
+    TrtInference() = default;
+    ~TrtInference();
+
+    // Non-copyable, non-movable (owns GPU memory)
+    TrtInference(const TrtInference&) = delete;
+    TrtInference& operator=(const TrtInference&) = delete;
+    TrtInference(TrtInference&&) = delete;
+    TrtInference& operator=(TrtInference&&) = delete;
+
+    // Load engine from file, allocate GPU buffers.
+    // modelW/modelH: input dimensions the engine was built for.
+    // numDetections: output detections count (usually 300).
+    bool Initialize(const std::string& enginePath,
+                    int modelWidth = 416,
+                    int modelHeight = 416,
+                    int numDetections = 300);
+
+    // Run inference on BGRA uint8 input.
+    // bgra:    pointer to BGRA pixel data (modelWidth × modelHeight × 4 bytes)
+    // confThr: minimum confidence threshold for detections
+    // Returns detections in model pixel coordinates — no scaling applied.
+    // The caller (Host via reply) knows the ROI size and can scale if needed.
+    std::vector<Detection> Infer(const uint8_t* bgra,
+                                 float confThr = 0.25f);
+
+    void Cleanup();
+    bool IsInitialized() const { return m_initialized; }
+
+    int GetModelWidth()  const { return m_modelW; }
+    int GetModelHeight() const { return m_modelH; }
+
+private:
+    bool m_initialized = false;
+
+    int m_modelW = 416;
+    int m_modelH = 416;
+    int m_numDets = 300;
+
+    // TensorRT objects (opaque to caller)
+    void* m_runtime   = nullptr;  // nvinfer1::IRuntime*
+    void* m_engine    = nullptr;  // nvinfer1::ICudaEngine*
+    void* m_context   = nullptr;  // nvinfer1::IExecutionContext*
+
+    // GPU buffers
+    void* m_dInput    = nullptr;  // input tensor (FP32 CHW)
+    void* m_dOutput   = nullptr;  // output tensor (FP32)
+    size_t m_outputBytes = 0;
+};
+
+} // namespace SynapseX

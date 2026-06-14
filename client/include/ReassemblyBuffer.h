@@ -10,10 +10,19 @@
 //     (the iron law of low-latency vision — never wait for stragglers)
 //   · Stale packets (frameId behind expectedFrameId) are dropped
 //
-// All buffers are pre-allocated to worst-case size to avoid
-// heap allocations in the receive hot path.
+// All buffers are pre-allocated to worst-case size (4096×4096 ROI)
+// to avoid heap allocations in the receive hot path.  In steady state
+// StartFrame() only reallocates data if the compressed frame exceeds
+// the current capacity, which with the worst-case pre-allocation
+// will never happen for any realistic ROI.
+//
+// Supports dynamic ROI: frameWidth / frameHeight are carried from
+// the PacketHeader through to decompression verification.
 
 #include "PacketHeader.h"
+
+#include <lz4.h>
+#include <algorithm>
 
 #include <cstdint>
 #include <cstring>
@@ -21,11 +30,13 @@
 
 namespace SynapseX {
 
-// ── Worst-case pre-allocation constants ─────────────────────
-// These ensure zero heap allocation during steady-state operation.
-constexpr uint32_t kRawFrameSize      = 640 * 640 * 4;   // BGRA: 1,638,400 bytes
-constexpr uint32_t kMaxCompressedSize = 1644841;          // LZ4_compressBound(1638400)
-constexpr uint16_t kMaxChunks         = 1175;             // ceil(1644841 / 1400)
+// ── Worst-case pre-allocation constants (4096 × 4096 ROI) ─────
+// Host may send any ROI from 416² through 4096².  We pre-allocate
+// for the worst case to guarantee zero heap allocation per frame.
+constexpr uint32_t kMaxRoiPixels       = 4096 * 4096;            // 16,777,216 px
+constexpr uint32_t kMaxRawFrameSize    = kMaxRoiPixels * 4;      // 67,108,864 bytes
+constexpr uint32_t kMaxCompressedSize  = 67372052;               // LZ4_compressBound(67108864)
+constexpr uint16_t kMaxChunks          = 48123;                  // ceil(67372052 / 1400)
 
 // ── Frame ID wrap-around-safe comparison ────────────────────
 // Returns true if `a` is newer than `b`, correctly handling
@@ -43,11 +54,19 @@ struct ReassemblyBuffer {
     uint32_t totalSize       = 0;           // compressed size for active frame
     uint16_t totalChunks     = 0;           // expected chunk count
     uint16_t chunksReceived  = 0;           // unique chunks collected so far
+    uint16_t frameWidth      = 0;           // ROI width  (from PacketHeader)
+    uint16_t frameHeight     = 0;           // ROI height (from PacketHeader)
+
+    // ── Convenience ─────────────────────────────────────────
+    uint32_t GetRawFrameSize() const {
+        return static_cast<uint32_t>(frameWidth) *
+               static_cast<uint32_t>(frameHeight) * 4;
+    }
 
     // ── Pre-allocated storage ────────────────────────────────
     // receivedMask: bitmask tracking which chunks have arrived.
     // data:         reassembly buffer for compressed payload.
-    // Both are pre-allocated to worst-case size.
+    // Both are pre-allocated to worst-case size (4096² ROI).
     std::vector<bool>    receivedMask;
     std::vector<uint8_t> data;
 
@@ -61,21 +80,28 @@ struct ReassemblyBuffer {
     // Begin collecting a new frame. Any partial old frame is
     // irrevocably discarded (the caller must have already counted
     // it as dropped if it was incomplete).
-    void StartFrame(uint32_t frameId, uint32_t totalSz, uint16_t totalCh) {
+    //
+    // width/height are extracted from PacketHeader and carried
+    // through to decompression verification.
+    void StartFrame(uint32_t frameId,
+                    uint32_t totalSz,
+                    uint16_t totalCh,
+                    uint16_t width,
+                    uint16_t height) {
         expectedFrameId = frameId;
         totalSize       = totalSz;
         totalChunks     = totalCh;
         chunksReceived  = 0;
+        frameWidth      = width;
+        frameHeight     = height;
 
         // Enlarge data buffer only if this frame's compressed
-        // payload is larger than our pre-allocation. In practice,
-        // compressed frames are 30–400 KB, so this rarely fires.
+        // payload exceeds pre-allocated capacity.  With 64 MiB
+        // worst-case pre-allocation, this never fires in practice.
         if (data.size() < totalSz) {
             data.resize(totalSz);
         }
 
-        // Reset received mask (vector<bool> assign: O(N) but
-        // kMaxChunks = 1175 bits ≈ 147 bytes — trivially fast).
         receivedMask.assign(totalCh, false);
     }
 
@@ -116,6 +142,8 @@ struct ReassemblyBuffer {
         totalSize       = 0;
         totalChunks     = 0;
         chunksReceived  = 0;
+        frameWidth      = 0;
+        frameHeight     = 0;
         receivedMask.clear();
         // data is intentionally preserved (reused capacity)
     }

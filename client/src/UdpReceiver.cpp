@@ -5,11 +5,11 @@
 // chunks using ReassemblyBuffer, and decompresses complete frames.
 // All buffers are pre-allocated — zero heap allocation per frame.
 //
-// UDP datagram layout (from HOST_SPEC.md §2):
-//   ┌──────────────┬─────────────────────────────────┐
-//   │ PacketHeader │        payload (LZ4 slice)      │
-//   │   16 bytes    │         ≤ MAX_PAYLOAD_SIZE      │
-//   └──────────────┴─────────────────────────────────┘
+// UDP datagram layout (updated 20-byte PacketHeader):
+//   ┌─────────────────────────┬────────────────────────────────┐
+//   │     PacketHeader        │       payload (LZ4 slice)      │
+//   │      20 bytes           │        ≤ MAX_PAYLOAD_SIZE      │
+//   └─────────────────────────┴────────────────────────────────┘
 
 #include "UdpReceiver.h"
 #include "PacketHeader.h"
@@ -80,12 +80,12 @@ bool UdpReceiver::Initialize(uint16_t port) {
         return false;
     }
 
-    // ── Pre-allocate decompression buffer ────────────────
-    m_decompressBuf.resize(kRawFrameSize);  // 640×640×4 = 1,638,400
+    // m_decompressBuf is NOT pre-sized here — it grows lazily
+    // on the first complete frame based on PacketHeader width/height.
 
     m_initialized = true;
     fprintf(stderr, "[UdpReceiver] Ready — listening on 0.0.0.0:%u, "
-            "non-blocking, recv buffer %d KB\n",
+            "non-blocking, recv buffer %d KB, dynamic ROI\n",
             port, bufSize / 1024);
     return true;
 }
@@ -138,11 +138,9 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
 
     // ── Return the latest completed frame ─────────────────
     if (anyFrameCompleted) {
-        // The decompressed data is already in m_decompressBuf
-        // from the last successful DecompressCurrentFrame call.
-        // Copy to caller's buffer.
-        outFrame.assign(m_decompressBuf.data(),
-                        m_decompressBuf.data() + kRawFrameSize);
+        // m_decompressBuf was already resized and filled by
+        // DecompressCurrentFrame.  Copy to caller verbatim.
+        outFrame = m_decompressBuf;
         outFrameId = m_lastDecodedFrameId;
         return true;
     }
@@ -180,10 +178,13 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
     const uint32_t totalSize    = header->totalSize;
     const uint16_t totalChunks  = header->totalChunks;
     const uint16_t chunkIndex   = header->chunkIndex;
+    const uint16_t frameWidth   = header->width;
+    const uint16_t frameHeight  = header->height;
 
     if (!m_buffer.HasActiveFrame()) {
         // First frame ever — start collecting.
-        m_buffer.StartFrame(frameId, totalSize, totalChunks);
+        m_buffer.StartFrame(frameId, totalSize, totalChunks,
+                            frameWidth, frameHeight);
         m_activeFrameIncomplete = true;
     } else if (IsNewerFrameId(frameId, m_buffer.expectedFrameId)) {
         // Newer frame arrived — flush old partial frame.
@@ -192,7 +193,8 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
         if (m_activeFrameIncomplete) {
             m_totalDropped++;
         }
-        m_buffer.StartFrame(frameId, totalSize, totalChunks);
+        m_buffer.StartFrame(frameId, totalSize, totalChunks,
+                            frameWidth, frameHeight);
         m_activeFrameIncomplete = true;
     } else if (frameId != m_buffer.expectedFrameId) {
         // Stale packet from an older frame — drop.
@@ -221,13 +223,16 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
         }
 
         // Decompress into m_decompressBuf (reused every frame).
-        // We DO NOT reset m_buffer here — the caller owns the
-        // decompressed data. Reset happens when the next frame starts.
+        // Width/height already stored in m_buffer from StartFrame.
         bool ok = DecompressCurrentFrame(m_decompressBuf);
         if (ok) {
             m_totalFramesReceived++;
             m_lastDecodedFrameId = frameId;
             m_hasDecodedAnyFrame = true;
+
+            // Cache dimensions for caller to interpret outFrame
+            m_lastFrameWidth  = m_buffer.frameWidth;
+            m_lastFrameHeight = m_buffer.frameHeight;
 
             // Reset buffer for next frame.
             m_buffer.Reset();
@@ -249,24 +254,32 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
 
 bool UdpReceiver::DecompressCurrentFrame(std::vector<uint8_t>& outFrame) {
     const int compressedSize = static_cast<int>(m_buffer.totalSize);
-    const int maxDecompressed = static_cast<int>(outFrame.size());  // 1,638,400
+    const uint32_t rawSize = m_buffer.GetRawFrameSize();
+
+    // Ensure output buffer is large enough (reuses capacity if shrinking)
+    outFrame.resize(rawSize);
 
     int result = LZ4_decompress_safe(
         reinterpret_cast<const char*>(m_buffer.data.data()),
         reinterpret_cast<char*>(outFrame.data()),
         compressedSize,
-        maxDecompressed
+        static_cast<int>(outFrame.size())
     );
 
-    if (result != static_cast<int>(kRawFrameSize)) {
+    const int expectedSize = static_cast<int>(rawSize);
+    if (result != expectedSize) {
         if (result < 0) {
             fprintf(stderr, "[UdpReceiver] LZ4_decompress_safe ERROR: %d "
-                    "(compressed=%d bytes, frameId=%u)\n",
-                    result, compressedSize, m_buffer.expectedFrameId);
+                    "(compressed=%d bytes, raw=%ux%ux4=%u, frameId=%u)\n",
+                    result, compressedSize,
+                    m_buffer.frameWidth, m_buffer.frameHeight, rawSize,
+                    m_buffer.expectedFrameId);
         } else {
-            fprintf(stderr, "[UdpReceiver] LZ4 size mismatch: got %d, expected %u "
-                    "(compressed=%d bytes, frameId=%u)\n",
-                    result, kRawFrameSize, compressedSize, m_buffer.expectedFrameId);
+            fprintf(stderr, "[UdpReceiver] LZ4 size mismatch: got %d, expected %d "
+                    "(raw=%ux%ux4=%u, compressed=%d bytes, frameId=%u)\n",
+                    result, expectedSize,
+                    m_buffer.frameWidth, m_buffer.frameHeight, rawSize,
+                    compressedSize, m_buffer.expectedFrameId);
         }
         return false;
     }
@@ -289,6 +302,8 @@ void UdpReceiver::Cleanup() {
     }
     m_initialized = false;
     m_buffer.Reset();
+    m_lastFrameWidth  = 0;
+    m_lastFrameHeight = 0;
 }
 
 } // namespace SynapseX

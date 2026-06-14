@@ -87,6 +87,7 @@ if(CUDAToolkit_FOUND)
     message(STATUS "  Toolkit dir:    ${CUDAToolkit_TARGET_DIR}")
     set(SX_CUDA_FOUND TRUE)
     set(SX_CUDA_INCLUDE_DIRS ${CUDAToolkit_INCLUDE_DIRS})
+    set(SX_CUDA_LIB_DIR     "${CUDAToolkit_TARGET_DIR}/lib/x64")
 else()
     # 手动指定 CUDA 13.1 安装路径
     set(CUDA_BASE_PATH "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.1")
@@ -103,58 +104,60 @@ else()
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-#  TensorRT — 手动设置寻址逻辑
+#  TensorRT 10.16.1.11 — 手动寻址
 # ═══════════════════════════════════════════════════════════════
 set(SX_TENSORRT_FOUND FALSE)
-set(TRT_BASE_PATH "C:/NVIDIA/TensorRT")
+set(TRT_BASE_PATH "C:/Program Files/NVIDIA/TensorRT-10.16.1.11.Windows.amd64.cuda-13.2/TensorRT-10.16.1.11")
 
 if(EXISTS "${TRT_BASE_PATH}/include/NvInfer.h")
     message(STATUS "[SynapseX Client] TensorRT found at: ${TRT_BASE_PATH}")
     set(SX_TENSORRT_FOUND TRUE)
     set(SX_TRT_INCLUDE_DIRS "${TRT_BASE_PATH}/include")
 
-    # TensorRT 库文件路径（lib 子目录）
     if(EXISTS "${TRT_BASE_PATH}/lib")
         set(SX_TRT_LIB_DIR "${TRT_BASE_PATH}/lib")
     endif()
 
-    # 若 CUDA 也已就绪，预先创建 TensorRT 依赖的接口库
     if(SX_CUDA_FOUND)
-        message(STATUS "[SynapseX Client] CUDA + TensorRT: both available. "
-                       "TensorRT inference target ready when .cu / .engine code is added.")
+        message(STATUS "[SynapseX Client] CUDA + TensorRT 10.16: both available. "
+                       "Enabling inference module.")
     endif()
 else()
     message(WARNING "[SynapseX Client] TensorRT NOT found at ${TRT_BASE_PATH}. "
-                    "Inference target will be skipped. "
-                    "Install TensorRT or set TRT_BASE_PATH in CMakeLists.txt.")
+                    "Inference target will be skipped.")
 endif()
 
-# 预留 TensorRT 推理模块的接口库（暂不链接任何 .cu / .cpp）
-# 后续添加推理代码时取消注释：
-# if(SX_CUDA_FOUND AND SX_TENSORRT_FOUND)
-#     add_library(SynapseX_Inference STATIC
-#         src/TrtInference.cpp
-#         src/TrtInference.cu
-#     )
-#     target_include_directories(SynapseX_Inference PRIVATE
-#         ${CMAKE_CURRENT_SOURCE_DIR}/include
-#         ${SX_CUDA_INCLUDE_DIRS}
-#         ${SX_TRT_INCLUDE_DIRS}
-#     )
-#     target_link_libraries(SynapseX_Inference PUBLIC
-#         ${SX_TRT_LIB_DIR}/nvinfer.lib
-#         ${SX_TRT_LIB_DIR}/nvinfer_plugin.lib
-#         ${SX_TRT_LIB_DIR}/nvonnxparser.lib
-#         ${SX_CUDA_LIB_DIR}/cudart.lib
-#         ${SX_CUDA_LIB_DIR}/cublas.lib
-#     )
-# endif()
+# ═══════════════════════════════════════════════════════════════
+#  TensorRT 推理模块
+# ═══════════════════════════════════════════════════════════════
+if(SX_CUDA_FOUND AND SX_TENSORRT_FOUND)
+    add_library(SynapseX_Inference STATIC
+        src/TrtInference.cpp
+    )
+    target_include_directories(SynapseX_Inference PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
+        ${SX_CUDA_INCLUDE_DIRS}
+        ${SX_TRT_INCLUDE_DIRS}
+    )
+    target_compile_definitions(SynapseX_Inference PRIVATE NOMINMAX)
+    target_link_libraries(SynapseX_Inference PUBLIC
+        ${SX_TRT_LIB_DIR}/nvinfer_10.lib
+        ${SX_TRT_LIB_DIR}/nvinfer_plugin_10.lib
+        ${SX_CUDA_LIB_DIR}/cudart.lib
+        ${SX_CUDA_LIB_DIR}/cuda.lib
+    )
+    set(SX_HAS_INFERENCE TRUE)
+else()
+    set(SX_HAS_INFERENCE FALSE)
+endif()
 
 # ═══════════════════════════════════════════════════════════════
 #  Client module sources
 # ═══════════════════════════════════════════════════════════════
 set(CLIENT_SOURCES
     src/UdpReceiver.cpp
+    src/TrtInference.cpp
     src/main.cpp
 )
 
@@ -170,18 +173,23 @@ target_include_directories(SynapseX_Client PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
 )
+target_compile_definitions(SynapseX_Client PRIVATE NOMINMAX)
 target_link_libraries(SynapseX_Client PRIVATE ${CLIENT_LIBS})
 
-# 若 CUDA + TensorRT 均已就绪，预链接推理库（后续取消注释即可）
-# if(SX_CUDA_FOUND AND SX_TENSORRT_FOUND)
-#     target_include_directories(SynapseX_Client PRIVATE
-#         ${SX_CUDA_INCLUDE_DIRS}
-#         ${SX_TRT_INCLUDE_DIRS}
-#     )
-#     target_link_libraries(SynapseX_Client PRIVATE
-#         SynapseX_Inference
-#     )
-# endif()
+# 链接 CUDA + TensorRT 推理模块
+if(SX_HAS_INFERENCE)
+    target_include_directories(SynapseX_Client PRIVATE
+        ${SX_CUDA_INCLUDE_DIRS}
+        ${SX_TRT_INCLUDE_DIRS}
+    )
+    target_link_libraries(SynapseX_Client PRIVATE
+        SynapseX_Inference
+        ${SX_TRT_LIB_DIR}/nvinfer_10.lib
+        ${SX_TRT_LIB_DIR}/nvinfer_plugin_10.lib
+        ${SX_CUDA_LIB_DIR}/cudart.lib
+        ${SX_CUDA_LIB_DIR}/cuda.lib
+    )
+endif()
 
 # ── Summary ────────────────────────────────────────────
 message(STATUS "")
@@ -192,12 +200,13 @@ message(STATUS "  LZ4:           ${LZ4_SRC_DIR}")
 message(STATUS "  Shared:        ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include")
 message(STATUS "  CUDA found:    ${SX_CUDA_FOUND}")
 message(STATUS "  TensorRT found: ${SX_TENSORRT_FOUND}")
+message(STATUS "  Inference:     ${SX_HAS_INFERENCE}")
 message(STATUS "  Winsock2:      ws2_32")
 if(SX_CUDA_FOUND)
-    message(STATUS "  CUDA include:  ${SX_CUDA_INCLUDE_DIRS}")
+    message(STATUS "  CUDA:          ${SX_CUDA_INCLUDE_DIRS}")
 endif()
 if(SX_TENSORRT_FOUND)
-    message(STATUS "  TRT include:   ${SX_TRT_INCLUDE_DIRS}")
+    message(STATUS "  TRT:           ${SX_TRT_INCLUDE_DIRS}")
 endif()
 message(STATUS "══════════════════════════════════════════════")
 message(STATUS "")
