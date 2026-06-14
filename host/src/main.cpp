@@ -293,7 +293,7 @@ int main(int argc, char* argv[]) {
                         if (tuner.IsAimEnabled() &&
                             mouse.AimAtTarget(targetCx, targetCy,
                                               best->confidence,
-                                              screenW, screenH)) {
+                                              screenW, screenH, aimCfg)) {
                             // Throttled log: ~every 180ms
                             static int aimCount = 0;
                             if (++aimCount % 30 == 1) {

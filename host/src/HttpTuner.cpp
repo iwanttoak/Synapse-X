@@ -74,26 +74,26 @@ static const char kHtmlPage[] = R"html(<!DOCTYPE html>
   <!-- Aim Config -->
   <div class="card">
     <h2>Aim Parameters</h2>
-    <label>Smooth Factor <span class="val" id="vSmooth">0.15</span></label>
+    <label>Smooth Factor <span class="val" id="vSmoothFactor">0.15</span></label>
     <input type="range" id="smoothFactor" min="0.01" max="1.00" step="0.01" value="0.15">
 
-    <label>Aim Range <span class="val" id="vRange">500</span></label>
+    <label>Aim Range <span class="val" id="vAimRange">500</span></label>
     <input type="range" id="aimRange" min="50" max="1000" step="10" value="500">
 
-    <label>Sensitivity <span class="val" id="vSens">1.00</span></label>
+    <label>Sensitivity <span class="val" id="vSensitivity">1.00</span></label>
     <input type="range" id="sensitivity" min="0.1" max="5.0" step="0.1" value="1.0">
 
-    <label>Min Confidence <span class="val" id="vConf">0.25</span></label>
+    <label>Min Confidence <span class="val" id="vMinConfidence">0.25</span></label>
     <input type="range" id="minConfidence" min="0.0" max="1.0" step="0.01" value="0.25">
 
-    <label>Aim Point <span class="val" id="vAimPt">Body</span></label>
+    <label>Aim Point <span class="val" id="vAimPoint">Body</span></label>
     <select id="aimPoint" style="width:100%;padding:6px;background:var(--bg);color:var(--text);
       border:1px solid var(--border);border-radius:4px;margin-bottom:12px;font-size:14px;">
       <option value="0">Body (bbox center)</option>
       <option value="1">Head (top of bbox)</option>
     </select>
 
-    <label>Head Offset <span class="val" id="vHeadOff">0.12</span></label>
+    <label>Head Offset <span class="val" id="vHeadOffset">0.12</span></label>
     <input type="range" id="headOffset" min="0.05" max="0.25" step="0.01" value="0.12">
 
     <div class="toggle">
@@ -134,7 +134,7 @@ function $(id) { return document.getElementById(id); }
 });
 $('aimEnabled').addEventListener('change', postConfig);
 $('aimPoint').addEventListener('change', function() {
-  $('vAimPt').textContent = this.value==='1' ? 'Head' : 'Body';
+  $('vAimPoint').textContent = this.value==='1' ? 'Head' : 'Body';
   postConfig();
 });
 
@@ -157,12 +157,13 @@ function setConfig(cfg) {
   $('aimPoint').value      = cfg.aimPoint || 0;
   $('headOffset').value    = cfg.headOffset || 0.12;
   $('aimEnabled').checked  = cfg.aimEnabled;
-  $('vSmooth').textContent = cfg.smoothFactor;
-  $('vRange').textContent  = cfg.aimRange;
-  $('vSens').textContent   = cfg.sensitivity.toFixed(2);
-  $('vConf').textContent   = cfg.minConfidence;
-  $('vAimPt').textContent  = (cfg.aimPoint===1) ? 'Head' : 'Body';
-  $('vHeadOff').textContent = (cfg.headOffset||0.12).toFixed(2);
+  // Span IDs match input IDs: v + CapitalizedName
+  $('vSmoothFactor').textContent  = cfg.smoothFactor;
+  $('vAimRange').textContent      = cfg.aimRange;
+  $('vSensitivity').textContent   = (cfg.sensitivity||1).toFixed(2);
+  $('vMinConfidence').textContent = cfg.minConfidence;
+  $('vAimPoint').textContent      = (cfg.aimPoint===1) ? 'Head' : 'Body';
+  $('vHeadOffset').textContent    = (cfg.headOffset||0.12).toFixed(2);
 }
 function postConfig() {
   fetch(HOST+'/api/config', {
