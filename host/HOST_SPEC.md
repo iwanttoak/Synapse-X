@@ -191,3 +191,58 @@ Client's inference pipeline fed with a steady stream.
 2. **Anti-cheat**: Some games actively block Desktop Duplication regardless of window mode.
 3. **Administrator**: Required for `ddll64.dll` mouse control.
 4. **Multi-GPU laptops**: May need to adjust adapter enumeration if capture targets wrong GPU.
+
+---
+
+## Unimplemented / Future Work
+
+### Aim Quality
+
+| Issue | Current | Ideal |
+|-------|---------|-------|
+| **Aim point** | Aims at bbox center only | Choose head (upper 20% of bbox) or body (center 60%) via config. Head = faster TTK in FPS games. |
+| **Mouse movement curve** | Simple `dx * 0.15` linear decay per frame | Human-like acceleration profile: slow start → fast middle → decelerate near target. Add micro-jitter noise for anti-detection. |
+| **Target stickiness** | Switches target every frame if confidence changes | Require N consecutive frames on the same target before switching (prevents flickering between targets). |
+| **Leading / prediction** | None | Predict target position based on velocity (Kalman filter or simple EMA of position deltas). |
+
+### Detection & Inference
+
+| Issue | Current | Ideal |
+|-------|---------|-------|
+| **Detection jitter** | No temporal smoothing — bbox jumps frame-to-frame | Running average or EMA over last 3–5 frames to stabilize bbox corners. |
+| **Multi-class priority** | Picks best enemy by confidence+distance | Configurable priority list: e.g. `enemy > teammate` or `closest > highest-conf`. |
+| **ROI switching** | Set at startup, requires restart to change | Runtime ROI toggle via hotkey or UDP command. Useful for switching between 416 (inference) and 640 (visual check). |
+
+### Observability & Tuning
+
+| Issue | Current | Ideal |
+|-------|---------|-------|
+| **Parameter tuning** | Edit `main.cpp` and recompile | Web-based dashboard (localhost HTTP server) to adjust `smoothFactor`, `aimRange`, `sensitivity` in real-time with sliders. |
+| **Visual overlay** | Console-only text output | Transparent overlay window showing: capture preview with detection boxes, aim crosshair, FPS graph. |
+| **Replay / debug** | No recording | Save raw frames + detections to disk for offline tuning and debugging. |
+
+### Performance
+
+| Issue | Current | Risk |
+|-------|---------|------|
+| **Idle re-transmit** | Re-sends cached frame at full 170 Hz even when desktop is static | Wastes ~5–50 MB/s on duplicate data. Could add a "skip-if-unchanged" mode that sends only 1 fps keep-alive when idle. |
+| **Single-threaded pipeline** | Capture → compress → send → reply → aim all on main thread | If any stage blocks (e.g. GPU Map stalls), the next tick is delayed. Could pipeline capture+compress on a separate thread. |
+| **Fixed LZ4 acceleration** | Always `acceleration=1` (fastest, lower ratio) | Could auto-tune: if pipeline has headroom, use higher acceleration for better ratio (less network traffic). |
+| **No QoS / prioritization** | All chunks treated equally | If a chunk is lost, the entire frame is dropped. Could add FEC (forward error correction) or retransmit last chunk for critical frames. |
+| **GPU contention** | DXGI capture competes with game for GPU time | On GPU-bound games, capture latency may spike. Could lower capture priority or use a secondary GPU for capture. |
+
+### Robustness
+
+| Issue | Current | Ideal |
+|-------|---------|-------|
+| **UDP no retransmit** | Lost packet = corrupted frame at Client | Optional lightweight NACK-based retransmit for the last N frames. |
+| **Client disconnection** | Host keeps sending into void | Detect idle reply stream and alert user. Could auto-pause sending to save bandwidth. |
+| **Resolution change** | Handled (ACCESS_LOST auto-rebuild) | Currently works, but would benefit from notifying the Client of the new dimensions. |
+
+### Integration
+
+| Issue | Current | Ideal |
+|-------|---------|-------|
+| **Hotkey toggle** | Ctrl+C kills everything | Bindable hotkeys: toggle aim on/off, switch target priority, toggle overlay. |
+| **Game profiles** | Single hardcoded `AimConfig` | Per-game config files (JSON/TOML) with sensitivity, aim range, class priorities. Auto-detect game by window title. |
+| **Multi-monitor game** | Captures output[0] only | Manual output selection via CLI arg `--output 1` for secondary monitor gaming. |

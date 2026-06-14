@@ -16,6 +16,7 @@
 #include "UdpSender.h"
 #include "UdpReplyReceiver.h"
 #include "MouseController.h"
+#include "HttpTuner.h"
 
 #include <chrono>
 #include <cmath>
@@ -115,18 +116,16 @@ int main(int argc, char* argv[]) {
 
     // Mouse controller (ddll64.dll for aim-assist)
     SynapseX::MouseController mouse;
-    // Default aim config — tune smoothFactor/sensitivity per game
-    SynapseX::AimConfig aimCfg;
-    aimCfg.smoothFactor = 0.15f;
-    aimCfg.aimRange     = 500.0f;
-    aimCfg.sensitivity  = 1.0f;
-    aimCfg.minConfidence = 0.25f;
-    mouse.SetConfig(aimCfg);
 
     if (!mouse.Load("ddll64.dll")) {
         fprintf(stderr, "[WARN] MouseController init FAILED — "
                 "aim-assist disabled. Is ddll64.dll next to the exe?\n");
-        // Non-fatal: pipeline still works without mouse control
+    }
+
+    // Web tuning panel (runs in background thread)
+    SynapseX::HttpTuner tuner;
+    if (!tuner.Start(9999)) {
+        fprintf(stderr, "[WARN] HttpTuner init FAILED — web panel unavailable.\n");
     }
 
     int screenW = capturer.GetOutputWidth();
@@ -272,16 +271,24 @@ int main(int argc, char* argv[]) {
                         float targetCx = (best->x1 + best->x2) * 0.5f;
                         float targetCy = (best->y1 + best->y2) * 0.5f;
 
-                        if (mouse.AimAtTarget(targetCx, targetCy,
-                                               best->confidence,
-                                               screenW, screenH)) {
-                            // Aim executed — print minimal info
+                        // Update web panel target info
+                        tuner.UpdateTarget(targetCx, targetCy,
+                                           best->confidence, bestDist,
+                                           static_cast<int>(best->classId));
+
+                        // Use tuner config (may be changed via web UI)
+                        auto aimCfg = tuner.GetConfig();
+                        mouse.SetConfig(aimCfg);
+
+                        if (tuner.IsAimEnabled() &&
+                            mouse.AimAtTarget(targetCx, targetCy,
+                                              best->confidence,
+                                              screenW, screenH)) {
+                            // Throttled log: ~every 180ms
                             static int aimCount = 0;
-                            if (++aimCount % 30 == 1) {  // throttle: every ~180ms
+                            if (++aimCount % 30 == 1) {
                                 fprintf(stderr,
-                                    "[Aim] frameId=%u target=%.0f,%.0f "
-                                    "conf=%.2f dist=%.0f\n",
-                                    replyFrameId,
+                                    "[Aim] tgt=%.0f,%.0f conf=%.2f dist=%.0f\n",
                                     static_cast<double>(targetCx),
                                     static_cast<double>(targetCy),
                                     static_cast<double>(best->confidence),
@@ -302,6 +309,8 @@ int main(int argc, char* argv[]) {
             double avgCompress= stats.captured > 0 ? stats.sumCompress / stats.captured : 0.0;
             double avgSend    = stats.sent     > 0 ? stats.sumSend     / stats.sent     : 0.0;
 
+            double pipelineTotal = avgCapture + avgCompress + avgSend;
+
             fprintf(stderr,
                 "---- per-second stats --------------------------------\n"
                 "  Send FPS: %6.1f  |  capture FPS: %6.1f  |  "
@@ -314,6 +323,12 @@ int main(int argc, char* argv[]) {
                 (long long)totalSent,
                 avgCapture, avgCompress, avgSend,
                 kTargetMs, kTargetFps);
+
+            // Push to web tuning panel
+            tuner.UpdateStats(sendFps, captureFps,
+                              pipelineTotal, avgCompress,
+                              stats.captured, stats.sent - stats.captured,
+                              static_cast<uint64_t>(totalSent));
 
             stats.reset();
             windowStart = Clock::now();
@@ -341,5 +356,6 @@ int main(int argc, char* argv[]) {
     sender.Cleanup();
     replyReceiver.Cleanup();
     mouse.Unload();
+    tuner.Stop();
     return 0;
 }

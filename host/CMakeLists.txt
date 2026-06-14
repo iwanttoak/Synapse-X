@@ -74,6 +74,7 @@ set(HOST_SOURCES
     src/UdpSender.cpp
     src/UdpReplyReceiver.cpp
     src/MouseController.cpp
+    src/HttpTuner.cpp
     src/main.cpp
 )
 
@@ -91,6 +92,7 @@ add_executable(SynapseX_Host ${HOST_SOURCES})
 target_include_directories(SynapseX_Host PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/cpp-httplib-0.47.0
 )
 target_link_libraries(SynapseX_Host PRIVATE ${HOST_LIBS})
 
