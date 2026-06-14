@@ -38,9 +38,9 @@
 
 | Parameter | Value |
 |-----------|-------|
-| ROI resolution | 640 × 640 (configurable, default) |
+| ROI resolution | Configurable (default 640×640, CLI: `[width] [height]`) |
 | Pixel format | BGRA, 8 bits per channel, 4 bytes per pixel |
-| Raw frame size | 1,638,400 bytes (1.56 MiB) |
+| Raw frame size | `width × height × 4` bytes (e.g. 416×416 = 692,224 bytes) |
 | Host target frame rate | 170 Hz (~5.88 ms per frame) |
 | Compression algorithm | LZ4 raw block (NOT LZ4 frame format) |
 | Compression level | `LZ4_compress_fast` acceleration=1 |
@@ -49,18 +49,18 @@
 
 ## 2. Wire Protocol: PacketHeader
 
-**File:** `shared/PacketHeader.h`
+**File:** `shared/include/PacketHeader.h`
 
-Every UDP datagram carries a 16-byte header followed by payload:
+Every UDP datagram carries a **20-byte** header followed by payload:
 
 ```
-Byte offset  0        2        6        8       10       14       16
-          ┌────────┬────────┬────────┬────────┬────────┬────────┬──────┐
-          │ magic  │frameId │totalCh │chunkIdx│totalSz │payldSz │ LZ4  │
-          │  2B    │  4B    │  2B    │  2B    │  4B    │  2B    │ data │
-          └────────┴────────┴────────┴────────┴────────┴────────┴──────┘
-           ◄────────────── 16-byte PacketHeader ──────────► ◄─ payload ─►
-           ◄────────── ≤ 1416 bytes total per UDP datagram ───────────►
+Byte offset  0        2        6        8       10       14       16       18       20
+          ┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬──────┐
+          │ magic  │frameId │totalCh │chunkIdx│totalSz │payldSz │ width  │ height │ LZ4  │
+          │  2B    │  4B    │  2B    │  2B    │  4B    │  2B    │  2B    │  2B    │ data │
+          └────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┴──────┘
+           ◄──────────────────── 20-byte PacketHeader ────────────────────► ◄─ payload ─►
+           ◄──────────── ≤ 1420 bytes total per UDP datagram ──────────────────────────►
 ```
 
 ### Field definitions
@@ -68,19 +68,21 @@ Byte offset  0        2        6        8       10       14       16
 | Field | Type | Offset | Description |
 |-------|------|--------|-------------|
 | `magic` | `uint16_t` | 0 | Protocol eye-catcher. Always `0x5358` (ASCII 'SX'). Drop the packet if this does not match. |
-| `frameId` | `uint32_t` | 2 | Monotonic frame counter. Starts at 0, wraps at 2³²⁻¹. The Host increments this for every captured frame. **All chunks of the same frame share the same frameId.** |
+| `frameId` | `uint32_t` | 2 | Monotonic frame counter. Starts at 0, wraps at 2³²⁻¹. **All chunks of the same frame share the same frameId.** |
 | `totalChunks` | `uint16_t` | 6 | Number of UDP packets this compressed frame is split into. |
 | `chunkIndex` | `uint16_t` | 8 | Zero-based index of this packet within the frame. Range: `[0, totalChunks-1]`. |
-| `totalSize` | `uint32_t` | 10 | Total size of the **compressed** LZ4 payload in bytes. This is the buffer you need to reassemble before calling `LZ4_decompress_safe`. |
-| `payloadSize` | `uint16_t` | 14 | Number of valid LZ4 payload bytes in **this** packet. All chunks except possibly the last one are exactly `MAX_PAYLOAD_SIZE` bytes. The last chunk may be smaller. |
+| `totalSize` | `uint32_t` | 10 | Total size of the **compressed** LZ4 payload in bytes. |
+| `payloadSize` | `uint16_t` | 14 | Number of valid LZ4 payload bytes in **this** packet. |
+| `width` | `uint16_t` | 16 | **ROI width** in pixels (e.g., 640, 416). Client uses this to size the decompression buffer. |
+| `height` | `uint16_t` | 18 | **ROI height** in pixels (e.g., 640, 416). Raw frame size = `width × height × 4`. |
 
 ### Constants
 
 ```cpp
 constexpr uint16_t MAX_PAYLOAD_SIZE = 1400;   // max payload per packet
 constexpr uint16_t PROTOCOL_MAGIC   = 0x5358; // 'SX'
-// Effective max UDP datagram = 16 (header) + 1400 (payload) = 1416 bytes
-// This stays well under the 1472-byte Ethernet MTU payload limit.
+// Effective max UDP datagram = 20 (header) + 1400 (payload) = 1420 bytes
+// Still well under the 1472-byte Ethernet MTU payload limit.
 ```
 
 ### Byte order
@@ -90,7 +92,7 @@ All integer fields are **little-endian** (native x86_64 byte order; both Host an
 ### Layout guarantee
 
 ```cpp
-static_assert(sizeof(PacketHeader) == 16, "PacketHeader must be 16 bytes");
+static_assert(sizeof(PacketHeader) == 20, "PacketHeader must be 20 bytes");
 ```
 
 The struct is `#pragma pack(push, 1)` — no alignment padding between fields.
@@ -176,8 +178,9 @@ int decompressedSize = LZ4_decompress_safe(
 
 ### Verification
 
-- Expected output size: **1,638,400 bytes** (640 × 640 × 4)
-- If `decompressedSize != 1638400`: decompression error, discard frame
+- Expected output size: **`width × height × 4` bytes** (from PacketHeader fields)
+- Example: 640×640 → 1,638,400 bytes; 416×416 → 692,224 bytes
+- If `decompressedSize != width * height * 4`: decompression error, discard frame
 - `LZ4_decompress_safe` returns a negative value on corruption — handle this gracefully
 
 ### Compression parameters the Host uses
@@ -261,30 +264,29 @@ Measured on the Host machine (RTX 5070 Ti, 3840×2160 desktop, 640×640 ROI, Rel
 
 ---
 
-## 7. Quick-start Test (for Client developer)
+## 7. Host CLI Usage
 
-To test your Client implementation without the Host running, use these reference values:
-
-### Test vector: all-gray desktop
-
-```
-Raw BGRA:   1,638,400 bytes of [31, 31, 31, 255] repeated
-LZ4 output: First 4 bytes contain the LZ4 compressed block
-            (variable size, typically ~100–500 bytes for uniform content)
-```
-
-### Capturing a reference frame
-
-On the Host machine:
 ```powershell
-cd host\build_x64\RelWithDebInfo
-.\SynapseX_Host_TestBmp.exe
-# Saves test_roi.bmp (visual check) and prints compression stats
+# Default: 192.168.100.2:8888  640×640
+.\SynapseX_Host.exe
+
+# Custom target IP and port
+.\SynapseX_Host.exe 192.168.100.2 8888
+
+# Custom ROI (416×416 for YOLO-style models)
+.\SynapseX_Host.exe 192.168.100.2 8888 416 416
+
+# The full argument order:
+#   SynapseX_Host.exe [target_ip] [port] [width] [height]
 ```
+
+ROI constraints: min 64×64, max 4096×4096. Width and height must both be specified or both omitted.
+
+## 8. Quick-start Test (for Client developer)
 
 ---
 
-## 8. Repository Structure
+## A. Repository Structure
 
 ```
 Synapse-X/                          # mono-repo root
@@ -353,7 +355,41 @@ Run: `.\SynapseX_Host.exe [target_ip] [port]` (defaults: 127.0.0.1:8888)
 
 ---
 
-## 9. Future: Host → Client response channel
+## 9. Breaking Change — Client MUST Adapt
+
+The protocol header changed from **16 → 20 bytes** (added `width` + `height` fields).
+The current Client code (`client/`) hardcodes 640×640 and assumes a 16-byte header.
+**If you run the new Host against the old Client, it will read garbage.**
+
+### Client-side changes required
+
+| File | Change |
+|------|--------|
+| `shared/include/PacketHeader.h` | **Sync** this file to get the 20-byte header with width/height |
+| `client/include/ReassemblyBuffer.h` | Remove `kRawFrameSize`, `kMaxCompressedSize`, `kMaxChunks` hardcoded to 640². Make them dynamic or compute from header. |
+| `client/src/UdpReceiver.cpp` | `Initialize()`: don't pre-allocate `m_decompressBuf` to a fixed size — allocate in `DecompressCurrentFrame()` using `width × height × 4` from the header. |
+| `client/src/UdpReceiver.cpp` | `DecompressCurrentFrame()`: use `header.width * header.height * 4` instead of `kRawFrameSize` for verification. |
+| `client/src/main.cpp` | Read `width`/`height` from the first successful frame instead of `constexpr int ROI_W = 640`. Use dynamic sizes in `SaveBgraAsBmp()` and the status print. |
+
+### Key pattern for Client decompression
+
+```cpp
+// OLD (hardcoded):
+int maxDecompressed = 640 * 640 * 4;         // 1,638,400
+int result = LZ4_decompress_safe(src, dst, compressedSize, maxDecompressed);
+
+// NEW (from header):
+int rawSize = header->width * header->height * 4;  // from PacketHeader
+// ... ensure dst buffer is resized to rawSize ...
+int result = LZ4_decompress_safe(src, dst, compressedSize, rawSize);
+```
+
+The `width` and `height` fields are present in **every** UDP packet — the Client can read
+them from any chunk of a frame, even before the frame is fully reassembled.
+
+---
+
+## 10. Future: Host → Client response channel
 
 The current protocol is unidirectional (Host → Client). A future iteration will add:
 - A small UDP response packet from Client → Host (inference result: bounding box coordinates)

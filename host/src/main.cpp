@@ -1,7 +1,11 @@
-// ─── Synapse-X Host — Production main loop ─────────────────
+// ─── Synapse-X Host -- Production main loop ─────────────────
 //
 // Pipeline (170 Hz target):
-//   DXGI center-ROI capture  →  LZ4 compress  →  UDP fragment & send
+//   DXGI center-ROI capture  ->  LZ4 compress  ->  UDP fragment & send
+//
+// Usage:
+//   SynapseX_Host.exe [target_ip] [port] [roi_w] [roi_h]
+//   Defaults: 192.168.100.2  8888   640     640
 //
 // Stats printed every second: actual FPS + per-stage avg latency.
 
@@ -16,15 +20,7 @@
 #include <atomic>
 #include <thread>
 
-// ═══════════════════════════════════════════════════════════════
-//  Global control
-// ═══════════════════════════════════════════════════════════════
-
 static std::atomic<bool> g_running{true};
-
-// ═══════════════════════════════════════════════════════════════
-//  High-precision timer helpers
-// ═══════════════════════════════════════════════════════════════
 
 using Clock     = std::chrono::high_resolution_clock;
 using TimePoint = Clock::time_point;
@@ -33,13 +29,9 @@ static inline double ToMs(Clock::duration d) {
     return std::chrono::duration<double, std::milli>(d).count();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Per-second statistics accumulator
-// ═══════════════════════════════════════════════════════════════
-
 struct PerfStats {
-    int    captured    = 0;   // frames with new content
-    int    sent        = 0;   // frames successfully sent
+    int    captured    = 0;
+    int    sent        = 0;
     double sumCapture  = 0.0;
     double sumCompress = 0.0;
     double sumSend     = 0.0;
@@ -53,41 +45,40 @@ struct PerfStats {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Entry point
-// ═══════════════════════════════════════════════════════════════
-
 int main(int argc, char* argv[]) {
     // ── Parse arguments ──────────────────────────────────
-    const char* targetIp  = (argc > 1) ? argv[1] : "127.0.0.1";
+    const char* targetIp   = (argc > 1) ? argv[1] : "192.168.100.2";
     uint16_t    targetPort = (argc > 2) ? static_cast<uint16_t>(std::atoi(argv[2])) : 8888;
+    int         roiW       = (argc > 3) ? std::atoi(argv[3]) : 640;
+    int         roiH       = (argc > 4) ? std::atoi(argv[4]) : 640;
+
+    if (roiW < 64 || roiH < 64 || roiW > 4096 || roiH > 4096) {
+        fprintf(stderr, "[FATAL] Invalid ROI: %dx%d (min 64, max 4096)\n", roiW, roiH);
+        return 1;
+    }
+
+    int rawSize = roiW * roiH * 4;
 
     fprintf(stderr, "============================================\n");
     fprintf(stderr, "  Synapse-X Host -- Production Pipeline\n");
     fprintf(stderr, "  Target: %s:%u\n", targetIp, targetPort);
+    fprintf(stderr, "  ROI:    %dx%d  (%.2f MB raw)\n", roiW, roiH, rawSize / (1024.0 * 1024.0));
     fprintf(stderr, "  Target FPS: 170 Hz\n");
     fprintf(stderr, "============================================\n\n");
 
     // ── Stage 0: Init all modules ────────────────────────
-    constexpr int ROI_W = 640;
-    constexpr int ROI_H = 640;
-    constexpr int RAW_SIZE = ROI_W * ROI_H * 4;  // 1,638,400 bytes
-
-    // DXGI capturer
     SynapseX::DxgiCapturer capturer;
-    if (!capturer.Initialize(ROI_W, ROI_H)) {
+    if (!capturer.Initialize(roiW, roiH)) {
         fprintf(stderr, "[FATAL] DxgiCapturer init FAILED.\n");
         return 1;
     }
 
-    // LZ4 compressor (pre-allocates worst-case buffer)
     SynapseX::Lz4Compressor compressor;
-    if (!compressor.Initialize(RAW_SIZE)) {
+    if (!compressor.Initialize(rawSize)) {
         fprintf(stderr, "[FATAL] Lz4Compressor init FAILED.\n");
         return 1;
     }
 
-    // UDP sender
     SynapseX::UdpSender sender;
     if (!sender.Initialize(targetIp, targetPort)) {
         fprintf(stderr, "[FATAL] UdpSender init FAILED.\n");
@@ -98,10 +89,10 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "[INFO] Press Ctrl+C to stop.\n\n");
 
     // ── Main loop state ──────────────────────────────────
-    std::vector<uint8_t> rawBuffer;       // BGRA frame (1.6 MB)
-    std::vector<uint8_t> compressedBuffer; // LZ4 output (variable)
-    rawBuffer.reserve(RAW_SIZE);
-    compressedBuffer.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(RAW_SIZE));
+    std::vector<uint8_t> rawBuffer;
+    std::vector<uint8_t> compressedBuffer;
+    rawBuffer.reserve(rawSize);
+    compressedBuffer.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
 
     uint32_t    frameId       = 0;
     PerfStats   stats;
@@ -109,17 +100,18 @@ int main(int argc, char* argv[]) {
     int64_t     totalSent     = 0;
     TimePoint   sessionStart  = Clock::now();
 
+    const uint16_t roiW16 = static_cast<uint16_t>(roiW);
+    const uint16_t roiH16 = static_cast<uint16_t>(roiH);
+
     // ═══════════════════════════════════════════════════════
     //  MAIN LOOP
     // ═══════════════════════════════════════════════════════
     while (g_running) {
-        // ── Stage 1: Capture ─────────────────────────────
         auto t0 = Clock::now();
         bool gotFrame = capturer.CaptureFrame(rawBuffer);
         auto t1 = Clock::now();
 
         if (gotFrame) {
-            // ── Stage 2: Compress ────────────────────────
             auto t2a = Clock::now();
             bool ok = compressor.Compress(rawBuffer.data(),
                                            static_cast<int>(rawBuffer.size()),
@@ -127,12 +119,13 @@ int main(int argc, char* argv[]) {
             auto t2b = Clock::now();
 
             if (ok) {
-                // ── Stage 3: Fragment & Send ─────────────
                 auto t3a = Clock::now();
                 bool sent = sender.SendCompressedFrame(
                     compressedBuffer.data(),
                     static_cast<uint32_t>(compressedBuffer.size()),
-                    frameId);
+                    frameId,
+                    roiW16,
+                    roiH16);
                 auto t3b = Clock::now();
 
                 if (sent) totalSent++;
@@ -145,8 +138,6 @@ int main(int argc, char* argv[]) {
                 frameId++;
             }
         } else {
-            // No new frame — yield to OS scheduler.
-            // Prevents burning CPU at millions of iterations/sec.
             std::this_thread::yield();
         }
 
@@ -173,7 +164,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── Final report ─────────────────────────────────────
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
     fprintf(stderr, "\n[DONE] Session ended. %.1f sec, %lld frames sent, avg %.1f FPS\n",
             sessionSec, (long long)totalSent,

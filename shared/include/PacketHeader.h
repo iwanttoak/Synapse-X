@@ -5,15 +5,15 @@
 // Each compressed frame is split into N UDP-friendly chunks.
 // The receiver reassembles chunks sharing the same FrameID.
 //
-//         ┌──────────────┬──────────────────────────────────┐
-//         │ PacketHeader │          Payload (LZ4)            │
-//         │   16 bytes    │         ≤ MAX_PAYLOAD            │
-//         └──────────────┴──────────────────────────────────┘
+//         ┌─────────────────────────┬────────────────────────┐
+//         │     PacketHeader        │   Payload (LZ4 data)   │
+//         │      20 bytes           │     ≤ MAX_PAYLOAD      │
+//         └─────────────────────────┴────────────────────────┘
 
 namespace SynapseX {
 
 // Payload cap — keeps total UDP datagram well under 1472-byte
-// Ethernet MTU, leaving headroom for IP/UDP headers and VPN overhead.
+// Ethernet MTU: 20 (header) + 1400 (payload) = 1420 bytes.
 constexpr uint16_t MAX_PAYLOAD_SIZE = 1400;
 
 // Magic number for basic integrity check on the wire.
@@ -25,14 +25,15 @@ struct PacketHeader {
     uint32_t frameId      = 0;               // monotonic frame counter
     uint16_t totalChunks  = 0;               // pieces in this frame
     uint16_t chunkIndex   = 0;               // 0-based piece index
-    uint32_t totalSize    = 0;               // uncompressed compressed-data size
+    uint32_t totalSize    = 0;               // compressed data size (bytes)
     uint16_t payloadSize  = 0;               // bytes in this packet's payload
+    uint16_t width        = 0;               // ROI width  (e.g., 640, 416)
+    uint16_t height       = 0;               // ROI height (e.g., 640, 416)
 };
 #pragma pack(pop)
 
-static_assert(sizeof(PacketHeader) == 16, "PacketHeader must be 16 bytes");
+static_assert(sizeof(PacketHeader) == 20, "PacketHeader must be 20 bytes");
 
-// Maximum payload bytes per packet — matching the header cap.
 constexpr uint16_t MAX_CHUNKS_PER_FRAME = 65535;
 
 } // namespace SynapseX

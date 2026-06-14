@@ -33,10 +33,13 @@ public:
 
     // Fragment `compressedData` (totalSize bytes) and send over UDP.
     // frameId: monotonically increasing frame counter, embedded in every chunk.
+    // width / height: ROI dimensions, embedded so Client can size its decoder.
     // Returns true if ALL chunks were sent successfully.
     bool SendCompressedFrame(const uint8_t* compressedData,
                              uint32_t totalSize,
-                             uint32_t frameId);
+                             uint32_t frameId,
+                             uint16_t width,
+                             uint16_t height);
 
     void Cleanup();
     bool IsInitialized() const { return m_initialized; }
