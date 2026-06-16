@@ -42,8 +42,10 @@
 | Compress | `Lz4Compressor` — `LZ4_compress_fast(accel=5)`, pre-allocated buffer | ~0.2 ms |
 | Send | `UdpSender` — non-blocking, 4MB buffer, stack-allocated header+payload | ~0.05 ms |
 | Receive reply | `UdpReplyReceiver` — non-blocking drain, model→screen coord mapping | <0.01 ms |
-| Aim | `MouseController` — PD controller with sub-pixel accumulator + delay compensation | <0.01 ms |
-| **Total** | | **~0.35 ms** (well under 5.88 ms budget @170 Hz) |
+| Aim | `MouseController` — PD + sub-pixel + delay-comp + spatial lock + auto-stretch | <0.01 ms |
+| **Host total** | | **~0.35 ms** |
+| Client inference | `TrtInference` — GPU preprocess (NVRTC) + TRT FP16, stable | **~1.5–1.8 ms** |
+| **End-to-end** | | **~2 ms** (well under 5.88 ms budget @170 Hz) |
 
 ---
 
