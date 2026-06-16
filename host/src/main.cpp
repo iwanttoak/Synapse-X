@@ -339,9 +339,17 @@ int main(int argc, char* argv[]) {
                             rawCy = (best->y1 + best->y2) * 0.5f;
                         }
 
-                        // Compute error from raw coords (no EMA)
-                        float dx = rawCx - static_cast<float>(screenW) * 0.5f;
-                        float dy = rawCy - static_cast<float>(screenH) * 0.5f;
+                        // Auto-stretch compensation
+                        // e.g. 2880 game on 3840 native → autoScale=0.75
+                        float autoScaleX = (screenW > 0)
+                            ? static_cast<float>(aimCfg.gameW) / static_cast<float>(screenW)
+                            : 1.0f;
+                        float autoScaleY = (screenH > 0)
+                            ? static_cast<float>(aimCfg.gameH) / static_cast<float>(screenH)
+                            : 1.0f;
+
+                        float dx = (rawCx - static_cast<float>(screenW) * 0.5f) * autoScaleX;
+                        float dy = (rawCy - static_cast<float>(screenH) * 0.5f) * autoScaleY;
 
                         // Update web panel target info
                         tuner.UpdateTarget(rawCx, rawCy,
