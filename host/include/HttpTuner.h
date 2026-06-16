@@ -47,13 +47,6 @@ struct TuningState {
     };
     TargetInfo target;
 
-    // ── Oscilloscope ring buffer (for web chart) ─────────
-    static constexpr int kScopeSize = 256;
-    struct ScopePoint { float rawDx; float emaDx; float output; float residual; };
-    ScopePoint scopeBuf[kScopeSize] = {};
-    int        scopeWriteIdx = 0;
-    int        scopeCount    = 0;
-
     // ── Server info ─────────────────────────────────────
     int     serverPort  = 9999;
     bool    running     = false;
@@ -90,9 +83,6 @@ public:
     // Update latest target info
     void UpdateTarget(float screenX, float screenY,
                       float confidence, float distance, int classId);
-
-    // Push one oscilloscope data point (called from main loop each aim tick)
-    void UpdateScope(float rawDx, float emaDx, float output, float residual);
 
 private:
     void ServerThread();

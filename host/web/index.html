@@ -79,9 +79,6 @@
     <label>Head Offset <span class="val" id="vheadOffset">0.12</span></label>
     <input type="range" id="headOffset" min="0.05" max="0.25" step="0.01" value="0.12">
 
-    <label>EMA Alpha <span class="val" id="vemaAlpha">0.20</span></label>
-    <input type="range" id="emaAlpha" min="0.01" max="1.00" step="0.01" value="0.20">
-
     <div class="toggle">
       <span>Aim Enabled</span>
       <input type="checkbox" id="aimEnabled" checked>
@@ -97,17 +94,6 @@
       conf=<span id="tConf">0.00</span>
       dist=<span id="tDist">0</span>px
       pos=(<span id="tX">0</span>, <span id="tY">0</span>)
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Oscilloscope</h2>
-    <canvas id="scopeCanvas" class="scope-canvas" width="976" height="360"></canvas>
-    <div class="scope-legend">
-      <span style="color:#f85149;">▬ rawDx</span>
-      <span style="color:#3fb950;">▬ emaDx</span>
-      <span style="color:#58a6ff;">▬ output</span>
-      <span style="color:#d2991d;">▬ residual</span>
     </div>
   </div>
 
@@ -131,7 +117,6 @@ function getConfig() {
     minConfidence: parseFloat($('minConfidence').value),
     aimPoint:      parseInt($('aimPoint').value),
     headOffset:    parseFloat($('headOffset').value),
-    emaAlpha:      parseFloat($('emaAlpha').value),
     aimEnabled:    $('aimEnabled').checked
   };
 }
@@ -143,7 +128,6 @@ function setConfigUI(cfg) {
   $('minConfidence').value = cfg.minConfidence || 0.25;
   $('aimPoint').value      = cfg.aimPoint || 0;
   $('headOffset').value    = cfg.headOffset || 0.12;
-  $('emaAlpha').value      = cfg.emaAlpha || 0.20;
   $('aimEnabled').checked  = cfg.aimEnabled !== false;
   $('vKp').textContent            = (cfg.Kp||0.40).toFixed(2);
   $('vKd').textContent            = (cfg.Kd||0.05).toFixed(2);
@@ -151,7 +135,6 @@ function setConfigUI(cfg) {
   $('vminConfidence').textContent = cfg.minConfidence || 0.25;
   $('vaimPoint').textContent      = (cfg.aimPoint===1) ? 'Head' : 'Body';
   $('vheadOffset').textContent    = (cfg.headOffset||0.12).toFixed(2);
-  $('vemaAlpha').textContent      = (cfg.emaAlpha||0.20).toFixed(2);
 }
 
 function postConfig() {
@@ -162,7 +145,7 @@ function postConfig() {
 }
 
 // ── Slider bindings ────────────────────────────────────
-['Kp','Kd','aimRange','minConfidence','headOffset','emaAlpha'].forEach(function(id) {
+['Kp','Kd','aimRange','minConfidence','headOffset'].forEach(function(id) {
   $(id).addEventListener('input', function() {
     var v = $(id).value;
     if (id === 'aimRange') v = parseInt(v);

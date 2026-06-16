@@ -143,7 +143,6 @@ void HttpTuner::ServerThread() {
         json += jsonStr("minConfidence", m_state.config.minConfidence) + ",";
         json += jsonStr("aimPoint",      m_state.config.aimPoint) + ",";
         json += jsonStr("headOffset",    m_state.config.headOffset) + ",";
-        json += jsonStr("emaAlpha",      m_state.config.emaAlpha) + ",";
         json += jsonStr("aimEnabled",    m_state.aimEnabled);
         json += "},";
         // Stats
@@ -163,33 +162,6 @@ void HttpTuner::ServerThread() {
         json += jsonStr("distance",   m_state.target.distance) + ",";
         json += jsonStr("classId",    m_state.target.classId);
         json += "}";
-        // Scope data (ring buffer → 4 arrays, oldest→newest)
-        json += ",\"scope\":{";
-        json += "\"rawDx\":[";
-        for (int i = 0; i < m_state.scopeCount; ++i) {
-            if (i > 0) json += ",";
-            int idx = (m_state.scopeWriteIdx - m_state.scopeCount + i + TuningState::kScopeSize) % TuningState::kScopeSize;
-            json += jsonEscape(m_state.scopeBuf[idx].rawDx);
-        }
-        json += "],\"emaDx\":[";
-        for (int i = 0; i < m_state.scopeCount; ++i) {
-            if (i > 0) json += ",";
-            int idx = (m_state.scopeWriteIdx - m_state.scopeCount + i + TuningState::kScopeSize) % TuningState::kScopeSize;
-            json += jsonEscape(m_state.scopeBuf[idx].emaDx);
-        }
-        json += "],\"output\":[";
-        for (int i = 0; i < m_state.scopeCount; ++i) {
-            if (i > 0) json += ",";
-            int idx = (m_state.scopeWriteIdx - m_state.scopeCount + i + TuningState::kScopeSize) % TuningState::kScopeSize;
-            json += jsonEscape(m_state.scopeBuf[idx].output);
-        }
-        json += "],\"residual\":[";
-        for (int i = 0; i < m_state.scopeCount; ++i) {
-            if (i > 0) json += ",";
-            int idx = (m_state.scopeWriteIdx - m_state.scopeCount + i + TuningState::kScopeSize) % TuningState::kScopeSize;
-            json += jsonEscape(m_state.scopeBuf[idx].residual);
-        }
-        json += "]}";
         json += "}";
 
         res.set_content(json, "application/json");
@@ -207,7 +179,6 @@ void HttpTuner::ServerThread() {
         if (extractFloat(body, "aimRange", f))      m_state.config.aimRange      = f;
         if (extractFloat(body, "minConfidence", f)) m_state.config.minConfidence = f;
         if (extractFloat(body, "headOffset", f))    m_state.config.headOffset    = f;
-        if (extractFloat(body, "emaAlpha", f))      m_state.config.emaAlpha      = f;
         if (extractFloat(body, "aimPoint", f))      m_state.config.aimPoint      = (int)f;
         if (extractBool(body, "aimEnabled", b))     m_state.aimEnabled           = b;
 
@@ -255,18 +226,6 @@ void HttpTuner::UpdateTarget(float screenX, float screenY,
     m_state.target.confidence = confidence;
     m_state.target.distance   = distance;
     m_state.target.classId    = classId;
-}
-
-void HttpTuner::UpdateScope(float rawDx, float emaDx,
-                              float output, float residual) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto& p = m_state.scopeBuf[m_state.scopeWriteIdx];
-    p.rawDx    = rawDx;
-    p.emaDx    = emaDx;
-    p.output   = output;
-    p.residual = residual;
-    m_state.scopeWriteIdx = (m_state.scopeWriteIdx + 1) % TuningState::kScopeSize;
-    if (m_state.scopeCount < TuningState::kScopeSize) m_state.scopeCount++;
 }
 
 } // namespace SynapseX
