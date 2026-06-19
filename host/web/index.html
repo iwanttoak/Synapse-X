@@ -89,6 +89,15 @@
       <option value="1920,1080">1920x1080 (16:9)</option>
     </select>
 
+    <label>Select Game <span class="val" id="vgameSelect">Apex</span></label>
+    <select id="gameSelect" style="width:100%;padding:6px;background:var(--bg);color:var(--text);
+      border:1px solid var(--border);border-radius:4px;margin-bottom:12px;font-size:14px;">
+      <option value="0">Apex Legends (ID: 0)</option>
+      <option value="1">Delta Force (ID: 1)</option>
+      <option value="2">Battlefield 6 (ID: 2)</option>
+      <option value="3">Overwatch 2 (ID: 3)</option>
+    </select>
+
     <div class="toggle">
       <span>Aim Enabled</span>
       <input type="checkbox" id="aimEnabled" checked>
@@ -129,6 +138,7 @@ function getConfig() {
     headOffset:    parseFloat($('headOffset').value),
     gameW:         parseInt($('gameRes').value.split(',')[0]),
     gameH:         parseInt($('gameRes').value.split(',')[1]),
+    modelId:       parseInt($('gameSelect').value),
     aimEnabled:    $('aimEnabled').checked
   };
 }
@@ -142,6 +152,9 @@ function setConfigUI(cfg) {
   $('headOffset').value    = cfg.headOffset || 0.12;
   var gw = cfg.gameW || 3840, gh = cfg.gameH || 2160;
   $('gameRes').value         = gw + ',' + gh;
+  $('gameSelect').value      = cfg.modelId || 0;
+  var gn = ['Apex','Delta Force','Battlefield 6','Overwatch 2'];
+  $('vgameSelect').textContent = gn[cfg.modelId||0] || 'Apex';
   $('aimEnabled').checked  = cfg.aimEnabled !== false;
   $('vKp').textContent            = (cfg.Kp||0.26).toFixed(2);
   $('vKd').textContent            = (cfg.Kd||0.05).toFixed(2);
@@ -171,6 +184,11 @@ function postConfig() {
 });
 $('aimEnabled').addEventListener('change', postConfig);
 $('gameRes').addEventListener('change', postConfig);
+$('gameSelect').addEventListener('change', function() {
+  var names = ['Apex','Delta Force','Battlefield 6','Overwatch 2'];
+  $('vgameSelect').textContent = names[parseInt(this.value)] || 'Apex';
+  postConfig();
+});
 $('aimPoint').addEventListener('change', function() {
   $('vaimPoint').textContent = this.value==='1' ? 'Head' : 'Body';
   postConfig();

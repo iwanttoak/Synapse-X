@@ -248,7 +248,8 @@ int main(int argc, char* argv[]) {
                 cachedCompressed.data(),
                 static_cast<uint32_t>(cachedCompressed.size()),
                 frameId,
-                roiW16, roiH16);
+                roiW16, roiH16,
+                tuner.GetConfig().modelId);
             auto t3b = Clock::now();
 
             if (sent) totalSent++;
@@ -264,6 +265,47 @@ int main(int argc, char* argv[]) {
             uint32_t replyFrameId = 0;
             if (replyReceiver.ReceiveReplies(detections, replyFrameId)) {
                 if (!detections.empty()) {
+                    // ── Data Normalization Layer ──────────────────
+                    // Filter detections based on current modelId.
+                    // Each model has different class semantics;
+                    // we extract only "attackable target" (enemy body).
+                    auto aimCfg = tuner.GetConfig();
+                    uint8_t modelId = aimCfg.modelId;
+
+                    static uint8_t lastModelId = 0xFF; // sentinel
+                    if (modelId != lastModelId) {
+                        fprintf(stderr, "[Model] Switched to ID %u\n",
+                                static_cast<unsigned>(modelId));
+                        lastModelId = modelId;
+                    }
+
+                    std::vector<SynapseX::Detection> validTargets;
+                    validTargets.reserve(detections.size());
+
+                    for (const auto& d : detections) {
+                        bool keep = false;
+                        switch (modelId) {
+                        case 0: // apex_enemy_416: classId 0 = enemy
+                        case 3: // ow2_enemy_416:   classId 0 = enemy
+                            keep = (d.classId == 0);
+                            break;
+                        case 1: // delta_body_head_416: classId 0 = body, 1 = head (drop)
+                            keep = (d.classId == 0);
+                            break;
+                        case 2: // bf6_enemy_self_416: classId 0 = enemy, 1 = teammate (drop)
+                            keep = (d.classId == 0);
+                            break;
+                        default:
+                            keep = (d.classId == 0); // unknown model: assume classId 0
+                            break;
+                        }
+                        if (keep) validTargets.push_back(d);
+                    }
+
+                    // Replace raw detections with normalized set
+                    detections.swap(validTargets);
+
+                    if (!detections.empty()) {
                     const SynapseX::Detection* best = nullptr;
                     float bestDist = 1e9f;
                     float screenCx = static_cast<float>(screenW) * 0.5f;
@@ -271,8 +313,6 @@ int main(int argc, char* argv[]) {
 
                     if (isLocked) {
                         // ── Phase A: Maintain Lock ──────────────────
-                        // Search for nearest enemy to the LAST known
-                        // locked position, not screen center.
                         for (const auto& d : detections) {
                             if (d.classId != 0) continue;
                             float cx = (d.x1 + d.x2) * 0.5f;
@@ -373,6 +413,7 @@ int main(int argc, char* argv[]) {
                             }
                         }
                     }
+                }
                 }
             }
         }

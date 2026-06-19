@@ -36,6 +36,7 @@ struct AimConfig {
     int   nativeH         = 2160;    // monitor native height
     int   gameW           = 3840;    // game actual width (from web dropdown)
     int   gameH           = 2160;    // game actual height
+    uint8_t modelId       = 0;       // model selector (0=416, 1=640, ...)
 };
 
 class MouseController {

@@ -13,6 +13,7 @@
 //   · 输出格式：BGRA (DXGI_FORMAT_B8G8R8A8_UNORM)，每像素 4 字节
 
 #include <cstdint>
+#include <chrono>
 #include <vector>
 
 #include <d3d11.h>
@@ -95,6 +96,10 @@ private:
 
     // 用于在 ACCESS_LOST 后避免无限递归重建
     bool m_recreating = false;
+
+    // 重建冷却计时 — 防止 E_ACCESSDENIED 时高频重试
+    std::chrono::steady_clock::time_point m_lastRebuildAttempt;
+    static constexpr int kRebuildCooldownMs = 500;  // 两次重建最小间隔
 
     // 最近一帧的 DXGI 元数据（用于上层诊断）
     DXGI_OUTDUPL_FRAME_INFO m_lastFrameInfo = {};

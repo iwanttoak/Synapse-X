@@ -46,6 +46,7 @@
 - **2-frame delay compensation** — subtracts in-flight MoveR from visual error
 - **Spatial target lock** (anti-ping-pong) — Phase A maintain / Phase B acquire, 80px radius, 5-frame tolerance
 - **Auto-stretch compensation** — dropdown selects game resolution, auto-computes scaleX/Y
+- **modelId in protocol** — PacketHeader 20B→24B, modelId embedded per-frame, Client can switch models at runtime
 - **Removed `sensitivity`** — redundant with Kp
 - **Removed EMA** — PD sub-pixel accumulator made it unnecessary
 - **Headers split out** — `web/index.html` served from disk, editable without recompile
@@ -120,7 +121,7 @@ Synapse-X/
 ├── CMakeLists.txt
 │
 ├── shared/include/
-│   ├── PacketHeader.h               (20B, width/height)
+│   ├── PacketHeader.h               (24B, width/height/modelId)
 │   └── ReplyPacket.h                (ReplyHeader + DetectionRaw)
 │
 ├── host/

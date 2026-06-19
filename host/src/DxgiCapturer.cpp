@@ -14,6 +14,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <thread>
 
 // Always-on diagnostic logging (use SX_LOG_ALWAYS for critical info)
 #define SX_LOG(fmt, ...) fprintf(stderr, "[DxgiCapturer] " fmt "\n", ##__VA_ARGS__)
@@ -78,15 +79,28 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
 
     // Fullscreen exclusive lost / mode switch — auto-rebuild
     if (hr == DXGI_ERROR_ACCESS_LOST) {
-        SX_LOG("ACCESS_LOST detected, rebuilding duplication pipeline...");
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - m_lastRebuildAttempt).count();
+
+        if (elapsed < kRebuildCooldownMs) {
+            return false;  // cooldown — don't retry yet
+        }
+        m_lastRebuildAttempt = now;
+
+        SX_LOG("ACCESS_LOST — rebuilding (cooldown=%dms)...", (int)elapsed);
         m_recreating = true;
         ReleaseResources();
+
+        // Brief sleep — game may still hold exclusive output during transition
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         if (CreateDeviceAndDuplication()) {
             SX_LOG("Rebuild OK.");
             m_recreating = false;
+            m_initialized = true;
         } else {
-            SX_LOG("Rebuild FAILED, will retry on next call.");
+            SX_LOG("Rebuild FAILED, will retry after cooldown.");
             m_initialized = false;
             m_recreating = false;
         }

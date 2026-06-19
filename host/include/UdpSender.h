@@ -39,7 +39,8 @@ public:
                              uint32_t totalSize,
                              uint32_t frameId,
                              uint16_t width,
-                             uint16_t height);
+                             uint16_t height,
+                             uint8_t  modelId);
 
     void Cleanup();
     bool IsInitialized() const { return m_initialized; }

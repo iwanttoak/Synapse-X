@@ -5,7 +5,7 @@
 // Layout of a single UDP datagram:
 //   ┌──────────────┬─────────────────────────────────┐
 //   │ PacketHeader │        payload (LZ4 slice)      │
-//   │   20 bytes    │         ≤ MAX_PAYLOAD_SIZE      │
+//   │   24 bytes    │         ≤ MAX_PAYLOAD_SIZE      │
 //   └──────────────┴─────────────────────────────────┘
 
 #include "UdpSender.h"
@@ -88,7 +88,8 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
                                      uint32_t totalSize,
                                      uint32_t frameId,
                                      uint16_t width,
-                                     uint16_t height) {
+                                     uint16_t height,
+                                     uint8_t  modelId) {
     if (!m_initialized) return false;
     if (totalSize == 0)   return false;
 
@@ -109,6 +110,7 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
     header->totalSize   = totalSize;
     header->width       = width;
     header->height      = height;
+    header->modelId     = modelId;
 
     const uint8_t* src = compressedData;
     uint32_t remaining = totalSize;

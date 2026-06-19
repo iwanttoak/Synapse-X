@@ -147,6 +147,7 @@ void HttpTuner::ServerThread() {
         json += jsonStr("gameH",        (int)m_state.config.gameH) + ",";
         json += jsonStr("nativeW",      (int)m_state.config.nativeW) + ",";
         json += jsonStr("nativeH",      (int)m_state.config.nativeH) + ",";
+        json += jsonStr("modelId",      (int)m_state.config.modelId) + ",";
         json += jsonStr("aimEnabled",    m_state.aimEnabled);
         json += "},";
         // Stats
@@ -185,6 +186,7 @@ void HttpTuner::ServerThread() {
         if (extractFloat(body, "headOffset", f))    m_state.config.headOffset    = f;
         if (extractFloat(body, "gameW", f))         m_state.config.gameW         = (int)f;
         if (extractFloat(body, "gameH", f))         m_state.config.gameH         = (int)f;
+        if (extractFloat(body, "modelId", f))       m_state.config.modelId       = (uint8_t)f;
         if (extractFloat(body, "aimPoint", f))      m_state.config.aimPoint      = (int)f;
         if (extractBool(body, "aimEnabled", b))     m_state.aimEnabled           = b;
 
