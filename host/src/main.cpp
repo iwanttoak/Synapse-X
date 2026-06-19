@@ -58,8 +58,8 @@ int main(int argc, char* argv[]) {
     // ── Parse arguments ──────────────────────────────────
     const char* targetIp   = (argc > 1) ? argv[1] : "192.168.100.2";
     uint16_t    targetPort = (argc > 2) ? static_cast<uint16_t>(std::atoi(argv[2])) : 8888;
-    int         roiW       = (argc > 3) ? std::atoi(argv[3]) : 640;
-    int         roiH       = (argc > 4) ? std::atoi(argv[4]) : 640;
+    int         roiW       = (argc > 3) ? std::atoi(argv[3]) : 416;
+    int         roiH       = (argc > 4) ? std::atoi(argv[4]) : 416;
 
     if (roiW < 64 || roiH < 64 || roiW > 4096 || roiH > 4096) {
         fprintf(stderr, "[FATAL] Invalid ROI: %dx%d (min 64, max 4096)\n", roiW, roiH);
