@@ -82,7 +82,7 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
     switch (modelId) {
         case 0:  return "../../model/engine/apex_enemy_416.engine";       // Apex Legends, 1 class: enemy
         case 1:  return "../../model/engine/delta_body_head_416.engine";  // Delta Force, 2 classes: body, head
-        case 2:  return "../../model/engine/bf6_enemy_self_416.engine";   // Battlefield 6, 2 classes: enemy, teammate
+        case 2:  return "../../model/engine/bf6_enemy_self_new.engine";   // Battlefield 6, 2 classes: enemy, teammate
         case 3:  return "../../model/engine/ow2_enemy_416.engine";        // Overwatch 2, 1 class: enemy
         default:
             fprintf(stderr, "[TrtInference] Unknown modelId=%u (valid: 0-3)\n", modelId);
