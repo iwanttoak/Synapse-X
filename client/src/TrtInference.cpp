@@ -84,8 +84,10 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
         case 1:  return "../../model/engine/delta_body_head_416.engine";  // Delta Force, 2 classes: body, head
         case 2:  return "../../model/engine/bf6_enemy_self_new.engine";   // Battlefield 6, 2 classes: enemy, teammate
         case 3:  return "../../model/engine/ow2_enemy_416.engine";        // Overwatch 2, 1 class: enemy
+        case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs, 1 class: enemy
+        case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG, 2 classes: body, head
         default:
-            fprintf(stderr, "[TrtInference] Unknown modelId=%u (valid: 0-3)\n", modelId);
+            fprintf(stderr, "[TrtInference] Unknown modelId=%u (valid: 0-5)\n", modelId);
             return "";
     }
 }

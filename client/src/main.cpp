@@ -246,19 +246,23 @@ static void ConsumerThread(ConsumerCtx* ctx) {
 
             // ── Print detections periodically ─────────────
             if (localFrameCount % kPrintDetEvery == 0 && !dets.empty()) {
-                static const char* kApexCls[]  = {"enemy"};
-                static const char* kDeltaCls[] = {"body", "head"};
-                static const char* kBf6Cls[]   = {"enemy", "teammate"};
-                static const char* kOw2Cls[]   = {"enemy"};
+                static const char* kApexCls[]    = {"enemy"};
+                static const char* kDeltaCls[]   = {"body", "head"};
+                static const char* kBf6Cls[]     = {"enemy", "teammate"};
+                static const char* kOw2Cls[]     = {"enemy"};
+                static const char* kAimlabsCls[] = {"enemy"};
+                static const char* kPubgCls[]    = {"body", "head"};
 
                 uint8_t mid = ctx->trt->GetCurrentModelId();
                 const char* gameName; const char* const* clsNames; int numCls;
                 switch (mid) {
-                    case 0: gameName="Apex";  clsNames=kApexCls;  numCls=1; break;
-                    case 1: gameName="Delta"; clsNames=kDeltaCls; numCls=2; break;
-                    case 2: gameName="BF6";   clsNames=kBf6Cls;   numCls=2; break;
-                    case 3: gameName="OW2";   clsNames=kOw2Cls;   numCls=1; break;
-                    default: gameName="?";    clsNames=nullptr;   numCls=0; break;
+                    case 0: gameName="Apex";    clsNames=kApexCls;    numCls=1; break;
+                    case 1: gameName="Delta";   clsNames=kDeltaCls;   numCls=2; break;
+                    case 2: gameName="BF6";     clsNames=kBf6Cls;     numCls=2; break;
+                    case 3: gameName="OW2";     clsNames=kOw2Cls;     numCls=1; break;
+                    case 4: gameName="Aimlabs"; clsNames=kAimlabsCls; numCls=1; break;
+                    case 5: gameName="PUBG";    clsNames=kPubgCls;    numCls=2; break;
+                    default: gameName="?";      clsNames=nullptr;     numCls=0; break;
                 }
                 fprintf(stderr, "[INFER] Frame #%llu (hostId=%u) [%s]: %zu detections\n",
                         static_cast<unsigned long long>(localFrameCount),
