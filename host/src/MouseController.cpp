@@ -9,9 +9,7 @@
 
 namespace SynapseX {
 
-static constexpr float kDeadzonePx   = 3.0f;
-static constexpr float kMaxDtSec     = 0.050f;
-static constexpr float kDefaultDt    = 0.00588f;  // 1/170 Hz
+static constexpr float kDeadzonePx   = 1.5f;  // micro-deadzone
 
 // ═══════════════════════════════════════════════════════════════
 //  DLL lifecycle
@@ -100,61 +98,40 @@ bool MouseController::AimAtTarget(float dx, float dy,
     float realDx = dx - sumSentX;
     float realDy = dy - sumSentY;
 
-    // ── 2. Deadzone (on compensated error) ────────────────
-    float dist = std::sqrt(realDx * realDx + realDy * realDy);
-    if (dist < kDeadzonePx) {
+    // ── 2. Micro-deadzone ──────────────────────────────────
+    float pixelError = std::sqrt(realDx * realDx + realDy * realDy);
+    if (pixelError < 1.5f) {
         ResetPDState();
         return false;
     }
 
     // Range gate
-    if (dist > cfg.aimRange) {
+    if (pixelError > cfg.aimRange) {
         ResetPDState();
         return false;
     }
 
-    // ── 3. Compute dt ─────────────────────────────────────
-    auto now = Clock::now();
-    float dt = kDefaultDt;
-    bool  forceReset = false;
+    // ── 3. Dynamic Kp (exponential decay toward base) ──────
+    // Kp_actual = Kp_base + (Kp_max - Kp_base) * exp(-k * Error)
+    //   Far away:  exp(-∞) ≈ 0  → Kp = Kp_base (gentle tracking)
+    //   Point blank: exp(0) = 1 → Kp = Kp_max  (magnetic snap)
+    float currentKp = cfg.Kp + (cfg.kpMax - cfg.Kp) *
+        std::exp(-cfg.kpDecay * pixelError);
+    if (currentKp > cfg.kpMax) currentKp = cfg.kpMax;
+    if (currentKp < cfg.Kp)     currentKp = cfg.Kp;
 
-    if (!m_hasLastTime) {
-        forceReset = true;
-    } else {
-        auto elapsed = std::chrono::duration<float>(now - m_lastTime);
-        dt = elapsed.count();
-        if (!(dt > 0.0f)) dt = kDefaultDt;
-        if (dt > kMaxDtSec) { forceReset = true; dt = kDefaultDt; }
+    // ── 4. D-term (damping on compensated error delta) ─────
+    float dErrorX = 0.0f, dErrorY = 0.0f;
+    if (m_hasLastTime) {
+        dErrorX = realDx - m_prevErrorX;
+        dErrorY = realDy - m_prevErrorY;
     }
 
-    if (forceReset) {
-        m_prevErrorX = realDx;
-        m_prevErrorY = realDy;
-    }
+    // ── 5. PD output ───────────────────────────────────────
+    float outX = currentKp * realDx + cfg.Kd * dErrorX;
+    float outY = currentKp * realDy + cfg.Kd * dErrorY;
 
-    // ── 4. PD core (per-axis, on compensated error) ───────
-    //
-    //   P = Kp * realError
-    //   D = Kd * dE               ← no dt division, no dE deadband
-    //
-    // The delay compensation (step 1) replaces the old dE
-    // deadband — legitimate slow-tracking changes pass through
-    // because they're not masked by a hard cutoff.
-
-    float kp = cfg.Kp;
-    float kd = cfg.Kd;
-
-    auto pdAxis = [&](float error, float& prevError) -> float {
-        float p = kp * error;
-        float dE = error - prevError;
-        float d = kd * dE;
-        return p + d;
-    };
-
-    float outX = pdAxis(realDx, m_prevErrorX);
-    float outY = pdAxis(realDy, m_prevErrorY);
-
-    // ── 5. Sub-pixel accumulator ──────────────────────────
+    // ── 6. Sub-pixel accumulator ──────────────────────────
     // Accumulate fractional output. Only emit MoveR when
     // |residual| ≥ 1.0, then extract and subtract the integer part.
     // This produces perfectly smooth tracking — no forced ±1 jitter,
@@ -180,20 +157,19 @@ bool MouseController::AimAtTarget(float dx, float dy,
         m_residualY -= static_cast<float>(moveY);
     }
 
-    // ── 6. Execute ─────────────────────────────────────────
+    // ── 7. Execute ─────────────────────────────────────────
     if (moveX != 0 || moveY != 0) {
         MoveRelative(moveX, moveY);
     }
 
-    // ── 7. Record in delay ring (for future compensation) ──
+    // ── 8. Record in delay ring (for future compensation) ──
     m_sentHistory[m_sentWriteIdx] = {moveX, moveY};
     m_sentWriteIdx = (m_sentWriteIdx + 1) % kDelayFrames;
     if (m_sentCount < kDelayFrames) m_sentCount++;
 
-    // ── 8. Save state ─────────────────────────────────────
+    // ── 9. Save state ─────────────────────────────────────
     m_prevErrorX  = realDx;
     m_prevErrorY  = realDy;
-    m_lastTime    = now;
     m_hasLastTime = true;
 
     return true;

@@ -144,6 +144,8 @@ void HttpTuner::ServerThread() {
         json += jsonStr("deltaHeadConfidence", m_state.config.deltaHeadConfidence) + ",";
         json += jsonStr("aimPoint",            m_state.config.aimPoint) + ",";
         json += jsonStr("headOffset",    m_state.config.headOffset) + ",";
+        json += jsonStr("kpMax",        m_state.config.kpMax) + ",";
+        json += jsonStr("kpDecay",      m_state.config.kpDecay) + ",";
         json += jsonStr("gameW",        (int)m_state.config.gameW) + ",";
         json += jsonStr("gameH",        (int)m_state.config.gameH) + ",";
         json += jsonStr("nativeW",      (int)m_state.config.nativeW) + ",";
@@ -186,6 +188,8 @@ void HttpTuner::ServerThread() {
         if (extractFloat(body, "minConfidence", f))       m_state.config.minConfidence       = f;
         if (extractFloat(body, "deltaHeadConfidence", f)) m_state.config.deltaHeadConfidence = f;
         if (extractFloat(body, "headOffset", f))          m_state.config.headOffset          = f;
+        if (extractFloat(body, "kpMax", f))              m_state.config.kpMax              = f;
+        if (extractFloat(body, "kpDecay", f))            m_state.config.kpDecay            = f;
         if (extractFloat(body, "gameW", f))         m_state.config.gameW         = (int)f;
         if (extractFloat(body, "gameH", f))         m_state.config.gameH         = (int)f;
         if (extractFloat(body, "modelId", f))       m_state.config.modelId       = (uint8_t)f;

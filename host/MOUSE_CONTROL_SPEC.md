@@ -140,24 +140,23 @@ AimAtTarget(dx, dy, confidence, cfg)   ← dx,dy = visual error
   │    realDx = dx - sumSentX
   │    realDy = dy - sumSentY
   │
-  ├─ STEP 2: Deadzone (on compensated error)
-  │    dist = sqrt(realDx² + realDy²)
-  │    if dist < 3.0 px → reset ALL state, return false
+  ├─ STEP 2: Micro-deadzone (on compensated error)
+  │    pixelError = sqrt(realDx² + realDy²)
+  │    if pixelError < 1.5 px → reset ALL state, return false
   │
   ├─ STEP 3: Range gate
-  │    if dist > cfg.aimRange → reset ALL state, return false
+  │    if pixelError > cfg.aimRange → reset ALL state, return false
   │
-  ├─ STEP 4: Compute dt
-  │    dt = now - lastTime (seconds)
-  │    if first frame or dt < 0 or dt > 50ms: dt = 5.88ms, forceReset
+  ├─ STEP 4: Dynamic Kp (exponential decay)
+  │    currentKp = Kp_base + (kpMax − Kp_base) × e^(−kpDecay × pixelError)
+  │    clamp to [Kp, kpMax]
   │
-  ├─ STEP 5: Reset guard
-  │    if forceReset: prevErrorX = realDx, prevErrorY = realDy
+  ├─ STEP 5: D-term (on compensated error delta)
+  │    dError = realError − prevError (only if hasPrevError)
+  │    D = Kd × dError
   │
-  ├─ STEP 6: PD compute (per-axis, on compensated error)
-  │    P = Kp * realError
-  │    D = Kd * (realError - prevError)
-  │    Output = P + D
+  ├─ STEP 6: PD output
+  │    Output = currentKp × realError + Kd × dError
   │
   ├─ STEP 7: Sub-pixel accumulator
   │    residualX += OutputX
@@ -174,19 +173,28 @@ AimAtTarget(dx, dy, confidence, cfg)   ← dx,dy = visual error
   │
   └─ STEP 10: Save PD state
        prevErrorX = realDx, prevErrorY = realDy
-       lastTime = now
+       hasPrevError = true
 ```
 
-### 5.2 PD Formula
+### 5.2 Dynamic Kp Formula
 
 ```
-Per axis (X and Y computed independently):
+pixelError = √(realDx² + realDy²)
 
-  realError  = visualError − sum(sentMoves[0..1])   ← delay compensation
-  dE         = realError − prevError
-  Output     = Kp * realError  +  Kd * dE
+Kp_actual = Kp_base + (kpMax − Kp_base) × e^(−kpDecay × pixelError)
 
-  residual  += Output                                ← sub-pixel accumulator
+                                          ←──── ──── →  ← 远距离用 base Kp，贴脸 boost 到 kpMax
+
+Example (Kp=0.30, kpMax=0.75, kpDecay=0.05):
+  200px → Kp≈0.30  (gentle tracking)
+   50px → Kp≈0.38  (engaging)
+   10px → Kp≈0.57  (magnetic)
+    0px → Kp=0.75  (max snap)
+
+PD output per axis:
+  Output = currentKp × realError + Kd × (realError − prevError)
+
+  residual += Output                                   ← sub-pixel accumulator
   if |residual| ≥ 1.0: emit MoveR(int(residual)), subtract int part
 ```
 
@@ -257,15 +265,16 @@ When the bucket fills to ≥1 pixel, a `MoveR` is emitted and that pixel is
 - The dE deadband is no longer needed — legitimate slow-tracking changes
   accumulate naturally through the residual
 
-### 5.5 Noise Gates (Two Layers)
+### 5.5 Noise Gates
 
 | Layer | Type | Threshold | Effect |
 |-------|------|-----------|--------|
-| Deadzone | Spatial | `dist < 3px` (on compensated error) | Stop ALL movement near target. |
+| Micro-deadzone | Spatial | `pixelError < 1.5px` | Stop ALL movement near target. |
+| Range gate | Spatial | `pixelError > aimRange` | Don't engage beyond FOV radius. |
 | Confidence gate | Detection | `conf < minConfidence` | Discard low-confidence detections. |
 
-The old derivative deadband (`|dE| < 0.5`) and forced-±1 quantization have
-been removed — the sub-pixel accumulator handles both cases smoothly.
+The old 3px deadzone, dt tracking, and derivative deadband have been removed.
+The dynamic Kp naturally decays to base Kp at long range (no extra damping needed).
 
 ### 5.5 State Reset Triggers
 
@@ -296,9 +305,11 @@ struct AimConfig {
 
 | Parameter | Web Slider Range | Step | Role |
 |-----------|-----------------|------|------|
-| `Kp` | 0.05 – 1.50 | 0.01 | Pull speed. Higher = faster flick. |
+| `Kp` | 0.05 – 1.50 | 0.01 | **Base Kp** (far-range tracking). Higher = faster flick. |
 | `Kd` | 0.00 – 0.50 | 0.01 | Braking force. Higher = less overshoot. 0 = pure P. |
-| `aimRange` | 50 – 1000 | 10 | Engagement radius in pixels. Beyond this, aim is disabled. |
+| `kpMax` | 0.10 – 1.50 | 0.05 | Max Kp at point-blank. Magnetic snap ceiling. |
+| `kpDecay` | 0.00 – 0.15 | 0.01 | Decay steepness. Higher = snap only at very close range. |
+| `aimRange` | 50 – 1000 | 10 | Engagement radius in pixels. |
 | `minConfidence` | 0.00 – 1.00 | 0.01 | Minimum detection confidence to engage. |
 | `aimPoint` | 0 / 1 | — | Body center or head. |
 | `headOffset` | 0.05 – 0.25 | 0.01 | Head position as fraction from bbox top. |
@@ -306,19 +317,16 @@ struct AimConfig {
 ### Tuning Guide
 
 ```
-Step 1: Kd = 0, tune Kp until crosshair reaches target quickly without
-        overshooting by more than ~50px.
-
-Step 2: Add Kd in 0.01 increments until micro-oscillation stops.
-
-Step 3: Adjust aimRange to your preferred engagement distance.
-
-Step 4: Adjust minConfidence — lower = more targets but more false positives.
+Step 1: Kd=0, kpMax=Kp. Tune Kp (base) for smooth long-range tracking.
+Step 2: Raise kpMax until close-range snap feels magnetic but not jittery.
+Step 3: Tune kpDecay — lower = snap activates further out, higher = only at point-blank.
+Step 4: Add Kd in 0.01 increments to dampen close-range overshoot.
+Step 5: aimRange + minConfidence as before.
 
 Typical profiles:
-  Slow & precise:  Kp=0.20  Kd=0.10
-  Balanced:         Kp=0.40  Kd=0.05  ← default
-  Aggressive flick: Kp=0.70  Kd=0.15
+  Smooth tracking:    Kp=0.25  kpMax=0.50  kpDecay=0.03  Kd=0.05
+  Balanced (default): Kp=0.30  kpMax=0.75  kpDecay=0.05  Kd=0.05
+  Aggressive snap:    Kp=0.40  kpMax=1.20  kpDecay=0.08  Kd=0.10
 ```
 
 ### Removed Parameters
@@ -327,6 +335,9 @@ Typical profiles:
 |-----------|-------------|
 | `smoothFactor` | Replaced by PD controller (Kp + Kd). Exponential decay was slow, inaccurate, and had no damping. |
 | `sensitivity` | Redundant — `Output = (P+D) × sensitivity` means sensitivity and Kp fight each other. Adjust Kp directly instead. |
+| `smoothFactor` (exponential decay) | Replaced by PD controller (Kp + Kd). |
+| `predictionFrames`, `emaAlpha`, `predictThreshold` | Velocity feedforward was unstable under visual latency. Replaced by dynamic Kp (distance-based boost). |
+| `EMA filter` | PD sub-pixel accumulator made it unnecessary. |
 
 ---
 

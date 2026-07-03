@@ -195,18 +195,23 @@ int main(int argc, char* argv[]) {
     // ═══════════════════════════════════════════════════════
     while (g_running) {
         // ── Hotkeys: PageUp=ON, PageDown=OFF ──────────────
-        if (GetAsyncKeyState(VK_PRIOR) & 1) {
+        static bool pgupWasDown = false, pgdnWasDown = false;
+        bool pgupDown = (GetAsyncKeyState(VK_PRIOR) & 0x8000) != 0;
+        bool pgdnDown = (GetAsyncKeyState(VK_NEXT)  & 0x8000) != 0;
+        if (pgupDown && !pgupWasDown) {
             if (!tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(true);
                 fprintf(stderr, "[Hotkey] Aim ON\n");
             }
         }
-        if (GetAsyncKeyState(VK_NEXT) & 1) {
+        if (pgdnDown && !pgdnWasDown) {
             if (tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(false);
                 fprintf(stderr, "[Hotkey] Aim OFF\n");
             }
         }
+        pgupWasDown = pgupDown;
+        pgdnWasDown = pgdnDown;
 
         // ── Stage 1: Capture (try every tick) ─────────────
         auto t0 = Clock::now();

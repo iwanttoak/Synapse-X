@@ -1,22 +1,18 @@
 #pragma once
 
-// ── PD-Controller with Sub-pixel Accumulation & Delay Compensation ─
+// ── Dynamic-Kp PD Controller with Delay Compensation ──────────
 //
-// Problem: In FPS games, MoveR(dx,dy) rotates the camera, not the cursor.
-// The visual pipeline (capture → network → inference → reply → aim)
-// has 1–2 frames of latency. The PD controller sees "old" error,
-// re-applies thrust, and overshoots.
+// Core formula:
+//   currentKp = Kp_base + (kpMax − Kp_base) × e^(−kpDecay × pixelError)
+//   Output    = currentKp × realError + Kd × (realError − prevError)
 //
-// Solution:
-//   1. Delay Compensation: subtract known in-flight MoveR amounts from
-//      the visual error before PD computation. Prevents double-counting.
-//   2. Sub-pixel Accumulator: accumulate fractional PD output.
-//      Only emit MoveR when |accumulator| ≥ 1.0. No forced ±1, no dE gate.
-//      Smooth tracking even at 1px-per-multiple-frames speeds.
+//   Kp automatically boosts from base (far-range) to kpMax (point-blank).
+//   This eliminates the need for velocity-based feedforward prediction.
 //
-//   Output = Kp * realError  +  Kd * (realError - prevError)
-//
-//   realError = visualError - sum(sentMoves in last 2 frames)
+// Sub-systems:
+//   1. Delay Compensation: subtract in-flight MoveR from visual error.
+//   2. Sub-pixel Accumulator: emit MoveR only when |residual| ≥ 1.0.
+//   3. Micro-deadzone: stop at < 1.5px error.
 
 #include <windows.h>
 #include <chrono>
@@ -38,6 +34,8 @@ struct AimConfig {
     int   gameW           = 3840;    // game actual width (from web dropdown)
     int   gameH           = 2160;    // game actual height
     uint8_t modelId       = 0;       // model selector (0=416, 1=640, ...)
+    float kpMax           = 0.75f;   // max Kp at point-blank (magnetic snap)
+    float kpDecay         = 0.05f;   // decay steepness (higher = snap only near target)
 };
 
 class MouseController {

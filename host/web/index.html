@@ -144,6 +144,13 @@
       </div>
     </div>
     <div class="card">
+      <h2>Dynamic Kp Engine</h2>
+      <label>Max Kp (Close-range) <span class="val" id="vkpMax">0.75</span></label>
+      <input type="range" id="kpMax" min="0.10" max="1.50" step="0.05" value="0.75">
+      <label>Kp Decay (k) <span class="val" id="vkpDecay">0.05</span></label>
+      <input type="range" id="kpDecay" min="0.00" max="0.15" step="0.01" value="0.05">
+    </div>
+    <div class="card">
       <h2>Pipeline Stats</h2>
       <div class="stat-row" id="stats"></div>
       <div class="target-box" id="targetBox">
@@ -175,6 +182,8 @@ function getConfig() {
     aimPoint:      parseInt($('aimPoint').value),
     headOffset:         parseFloat($('headOffset').value),
     deltaHeadConfidence: parseFloat($('deltaHeadConfidence').value),
+    kpMax:         parseFloat($('kpMax').value),
+    kpDecay:       parseFloat($('kpDecay').value),
     gameW:         parseInt($('gameRes').value.split(',')[0]),
     gameH:         parseInt($('gameRes').value.split(',')[1]),
     modelId:       parseInt($('gameSelect').value),
@@ -190,6 +199,8 @@ function setConfigUI(cfg) {
   $('aimPoint').value      = cfg.aimPoint || 0;
   $('headOffset').value          = cfg.headOffset || 0.20;
   $('deltaHeadConfidence').value = cfg.deltaHeadConfidence || 0.40;
+  $('kpMax').value   = (cfg.kpMax != null) ? cfg.kpMax : 0.75;
+  $('kpDecay').value = (cfg.kpDecay != null) ? cfg.kpDecay : 0.05;
   var gw = cfg.gameW || 3840, gh = cfg.gameH || 2160;
   $('gameRes').value         = gw + ',' + gh;
   $('gameSelect').value      = cfg.modelId || 0;
@@ -204,6 +215,8 @@ function setConfigUI(cfg) {
   $('vaimPoint').textContent      = (cfg.aimPoint===1) ? 'Head' : 'Body';
   $('vheadOffset').textContent    = (cfg.headOffset||0.20).toFixed(2);
   $('vdeltaHeadConfidence').textContent = (cfg.deltaHeadConfidence||0.40).toFixed(2);
+  $('vkpMax').textContent   = (cfg.kpMax != null ? cfg.kpMax : 0.75).toFixed(2);
+  $('vkpDecay').textContent = (cfg.kpDecay != null ? cfg.kpDecay : 0.05).toFixed(2);
   updateHeadOffsetUI();
 }
 
@@ -214,7 +227,7 @@ function postConfig() {
   }).catch(function(){});
 }
 
-['Kp','Kd','aimRange','minConfidence','headOffset','deltaHeadConfidence'].forEach(function(id) {
+['Kp','Kd','aimRange','minConfidence','headOffset','deltaHeadConfidence','kpMax','kpDecay'].forEach(function(id) {
   $(id).addEventListener('input', function() {
     var v = $(id).value;
     if (id === 'aimRange') v = parseInt(v);
