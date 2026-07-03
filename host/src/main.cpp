@@ -322,6 +322,7 @@ int main(int argc, char* argv[]) {
                         switch (modelId) {
                         case 0: // Apex      — 1-class: classId 0 = enemy
                         case 3: // OW2       — 1-class: classId 0 = enemy
+                        case 4: // Aimlabs   — 1-class: classId 0 = enemy
                             if (d.classId == 0 && d.confidence >= aimCfg.minConfidence) {
                                 ap.cy       = (aimCfg.aimPoint == 1) ? bcyHead : bcyCenter;
                                 ap.priority = 1;
@@ -331,6 +332,7 @@ int main(int argc, char* argv[]) {
                             break;
 
                         case 1: // Delta     — 2-class: 0=body, 1=head
+                        case 5: // PUBG      — 2-class: 0=body, 1=head
                             if (aimCfg.aimPoint == 1) {
                                 if (d.classId == 1 && d.confidence >= aimCfg.deltaHeadConfidence) {
                                     ap.cy       = bcyCenter;

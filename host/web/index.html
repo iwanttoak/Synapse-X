@@ -128,6 +128,8 @@
       <option value="1">Delta Force (ID: 1)</option>
       <option value="2">Battlefield 6 (ID: 2)</option>
       <option value="3">Overwatch 2 (ID: 3)</option>
+      <option value="4">Aimlabs (ID: 4)</option>
+      <option value="5">PUBG (ID: 5)</option>
     </select>
   </div>
 
@@ -204,7 +206,7 @@ function setConfigUI(cfg) {
   var gw = cfg.gameW || 3840, gh = cfg.gameH || 2160;
   $('gameRes').value         = gw + ',' + gh;
   $('gameSelect').value      = cfg.modelId || 0;
-  var gn = ['Apex','Delta Force','Battlefield 6','Overwatch 2'];
+  var gn = ['Apex','Delta Force','Battlefield 6','Overwatch 2','Aimlabs','PUBG'];
   $('vgameSelect').textContent = gn[cfg.modelId||0] || 'Apex';
   $('aimEnabled').checked  = cfg.aimEnabled !== false;
   $('masterStatus').textContent = $('aimEnabled').checked ? 'ACTIVE' : 'PAUSED';
@@ -244,14 +246,14 @@ $('aimEnabled').addEventListener('change', function() {
 $('gameRes').addEventListener('change', postConfig);
 function updateHeadOffsetUI() {
   var isHead  = $('aimPoint').value === '1';
-  var isDelta = parseInt($('gameSelect').value) === 1;
+  var isDelta = (parseInt($('gameSelect').value) === 1 || parseInt($('gameSelect').value) === 5);
   var show = isHead && !isDelta;
   $('headOffsetRow').style.display = show ? '' : 'none';
   // Delta head confidence — only for Delta
   $('deltaHeadConfRow').style.display = isDelta ? '' : 'none';
 }
 $('gameSelect').addEventListener('change', function() {
-  var names = ['Apex','Delta Force','Battlefield 6','Overwatch 2'];
+  var names = ['Apex','Delta Force','Battlefield 6','Overwatch 2','Aimlabs','PUBG'];
   $('vgameSelect').textContent = names[parseInt(this.value)] || 'Apex';
   updateHeadOffsetUI();
   postConfig();
