@@ -1,7 +1,7 @@
 // ─── UdpReplyReceiver.cpp ────────────────────────────────────
-// Non-blocking UDP listener for Client inference replies.
-// Parses ReplyHeader + DetectionRaw[] and maps model-space
-// coordinates to screen coordinates using the Host's ROI offset.
+// 用于客户端推理回复的非阻塞 UDP 监听器。
+// 解析 ReplyHeader + DetectionRaw[] 并将模型空间
+// 坐标映射到屏幕坐标（使用主机端的 ROI 偏移量）。
 
 #include "UdpReplyReceiver.h"
 #include "ReplyPacket.h"
@@ -14,7 +14,7 @@
 namespace SynapseX {
 
 // ═══════════════════════════════════════════════════════════════
-//  Lifecycle
+//  生命周期
 // ═══════════════════════════════════════════════════════════════
 
 UdpReplyReceiver::~UdpReplyReceiver() {
@@ -26,23 +26,23 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "[ReplyRecv] WSAStartup FAILED: %d\n", WSAGetLastError());
+        fprintf(stderr, "[ReplyRecv] WSAStartup 失败：%d\n", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
 
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        fprintf(stderr, "[ReplyRecv] socket() FAILED: %d\n", WSAGetLastError());
+        fprintf(stderr, "[ReplyRecv] socket() 失败：%d\n", WSAGetLastError());
         Cleanup();
         return false;
     }
 
-    // Non-blocking — we drain in the main loop, never block.
+    // 非阻塞 -- 在主循环中排空，绝不阻塞。
     u_long nonBlocking = 1;
     ioctlsocket(m_socket, FIONBIO, &nonBlocking);
 
-    int bufSize = 64 * 1024;  // 64 KB — generous for small replies
+    int bufSize = 64 * 1024;  // 64 KB —— 对于小回复来说足够充裕
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF,
                reinterpret_cast<const char*>(&bufSize), sizeof(bufSize));
 
@@ -53,14 +53,14 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     if (bind(m_socket, reinterpret_cast<const sockaddr*>(&localAddr),
              sizeof(localAddr)) == SOCKET_ERROR) {
-        fprintf(stderr, "[ReplyRecv] bind(:%u) FAILED: %d\n",
+        fprintf(stderr, "[ReplyRecv] bind(:%u) 失败：%d\n",
                 port, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    fprintf(stderr, "[ReplyRecv] Ready -- listening on 0.0.0.0:%u\n", port);
+    fprintf(stderr, "[ReplyRecv] 就绪 -- 监听在 0.0.0.0:%u\n", port);
     return true;
 }
 
@@ -77,7 +77,7 @@ void UdpReplyReceiver::Cleanup() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ROI setup
+//  ROI 设置
 // ═══════════════════════════════════════════════════════════════
 
 void UdpReplyReceiver::SetRoiParams(int roiW, int roiH,
@@ -95,7 +95,7 @@ void UdpReplyReceiver::RecalculateRoiOffset() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Receive loop (hot path)
+//  接收循环（热点路径）
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
@@ -116,12 +116,12 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
 
         if (bytes == SOCKET_ERROR) {
             int err = WSAGetLastError();
-            if (err == WSAEWOULDBLOCK) break;  // no more data
-            fprintf(stderr, "[ReplyRecv] recvfrom ERROR: %d\n", err);
+            if (err == WSAEWOULDBLOCK) break;  // 没有更多数据
+            fprintf(stderr, "[ReplyRecv] recvfrom 错误：%d\n", err);
             break;
         }
 
-        // ── Parse header ──────────────────────────────────
+        // ── 解析头部 ──────────────────────────────────
         if (bytes < static_cast<int>(sizeof(ReplyHeader))) continue;
 
         const auto* header = reinterpret_cast<const ReplyHeader*>(m_recvBuf);
@@ -129,7 +129,7 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
 
         uint16_t numDets = header->numDets;
         if (numDets > MAX_DETS_PER_REPLY) {
-            fprintf(stderr, "[ReplyRecv] numDets=%u exceeds max %u — clamping\n",
+            fprintf(stderr, "[ReplyRecv] numDets=%u 超过最大值 %u — 已钳制\n",
                     numDets, MAX_DETS_PER_REPLY);
             numDets = MAX_DETS_PER_REPLY;
         }
@@ -137,12 +137,12 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
         int expectedLen = static_cast<int>(
             sizeof(ReplyHeader) + numDets * sizeof(DetectionRaw));
         if (bytes < expectedLen) {
-            fprintf(stderr, "[ReplyRecv] Truncated reply: got %d, expected %d\n",
+            fprintf(stderr, "[ReplyRecv] 回复被截断：收到 %d，预期 %d\n",
                     bytes, expectedLen);
             continue;
         }
 
-        // ── Parse detections and map to screen coordinates ──
+        // ── 解析检测结果并映射到屏幕坐标 ──
         const auto* rawDets = reinterpret_cast<const DetectionRaw*>(
             m_recvBuf + sizeof(ReplyHeader));
 

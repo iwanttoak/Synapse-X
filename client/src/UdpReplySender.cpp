@@ -1,5 +1,5 @@
 // ─── UdpReplySender.cpp ────────────────────────────────────────
-// Packs Detection results into a compact UDP reply and sends to Host.
+// 将检测结果打包为紧凑的UDP回复并发送给主机。
 
 #include "UdpReplySender.h"
 #include "TrtInference.h"
@@ -14,11 +14,11 @@
 
 namespace SynapseX {
 
-// ── Constants ──────────────────────────────────────────────
-static constexpr int kSendBufSize = 64 * 1024;  // 64 KB socket send buffer
+// ── 常量 ──────────────────────────────────────────────────
+static constexpr int kSendBufSize = 64 * 1024;  // 64 KB 套接字发送缓冲区
 
 // ═══════════════════════════════════════════════════════════════
-//  Lifecycle
+//  生命周期
 // ═══════════════════════════════════════════════════════════════
 
 UdpReplySender::~UdpReplySender() {
@@ -28,7 +28,7 @@ UdpReplySender::~UdpReplySender() {
 bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     if (m_initialized) Cleanup();
 
-    // ── WinSock startup ──────────────────────────────────
+    // ── WinSock 启动 ────────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         fprintf(stderr, "[UdpReplySender] WSAStartup FAILED: %d\n",
@@ -37,7 +37,7 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     }
     m_wsaStarted = true;
 
-    // ── Create UDP socket ────────────────────────────────
+    // ── 创建UDP套接字 ──────────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
         fprintf(stderr, "[UdpReplySender] socket() FAILED: %d\n",
@@ -46,16 +46,16 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
         return false;
     }
 
-    // ── Enlarge send buffer ──────────────────────────────
+    // ── 扩大发送缓冲区 ─────────────────────────────────
     int bufSize = kSendBufSize;
     setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF,
                reinterpret_cast<const char*>(&bufSize), sizeof(bufSize));
 
-    // ── Set non-blocking (fire-and-forget) ───────────────
+    // ── 设置非阻塞（发送即忘） ──────────────────────────
     u_long nonBlocking = 1;
     ioctlsocket(m_socket, FIONBIO, &nonBlocking);
 
-    // ── Resolve target address ───────────────────────────
+    // ── 解析目标地址 ─────────────────────────────────────
     std::memset(&m_targetAddr, 0, sizeof(m_targetAddr));
     m_targetAddr.sin_family = AF_INET;
     m_targetAddr.sin_port   = htons(port);
@@ -74,18 +74,18 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SendReplies (hot path)
+//  SendReplies（热路径）
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpReplySender::SendReplies(uint32_t frameId,
                                   const std::vector<Detection>& dets) {
     if (!m_initialized) return false;
 
-    // Cap detections to max per reply
+    // 检测结果上限为每次回复最大数量
     uint16_t numDets = static_cast<uint16_t>(
         std::min(dets.size(), static_cast<size_t>(MAX_DETS_PER_REPLY)));
 
-    // ── Build packet on stack ────────────────────────────
+    // ── 在栈上构建数据包 ─────────────────────────────────
     constexpr size_t kMaxPacket = sizeof(ReplyHeader)
                                 + MAX_DETS_PER_REPLY * sizeof(DetectionRaw);
     alignas(64) uint8_t packetBuf[kMaxPacket];
@@ -94,7 +94,7 @@ bool UdpReplySender::SendReplies(uint32_t frameId,
     header->magic   = REPLY_MAGIC;
     header->frameId = frameId;
     header->numDets = numDets;
-    // padding already zeroed by ReplyHeader default init
+    // 填充字节已由 ReplyHeader 默认初始化清零
 
     auto* rawDets = reinterpret_cast<DetectionRaw*>(packetBuf + sizeof(ReplyHeader));
     for (uint16_t i = 0; i < numDets; ++i) {
@@ -128,7 +128,7 @@ bool UdpReplySender::SendReplies(uint32_t frameId,
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Cleanup
+//  Cleanup（清理）
 // ═══════════════════════════════════════════════════════════════
 
 void UdpReplySender::Cleanup() {

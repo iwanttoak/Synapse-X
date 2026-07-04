@@ -1,20 +1,20 @@
-// ─── Synapse-X Client — Async Producer-Consumer Pipeline ─────
+// ─── Synapse-X 客户端 — 异步生产者-消费者流水线 ─────────────
 //
-// Architecture:
-//   Producer (core 0): UDP recv → reassemble → LZ4 decompress → LIFO push
-//   Consumer (core 1): LIFO pop → TRT infer (dedicated stream) → reply
+// 架构：
+//   Producer（核心 0）：UDP 接收 → 重组 → LZ4 解压 → LIFO 推送
+//   Consumer（核心 1）：LIFO 弹出 → TRT 推理（专用流）→ 回复
 //
-// Key properties:
-//   · LIFO queue (size 1) — consumer always takes the LATEST frame
-//   · Producer NEVER waits for GPU — zero head-of-line blocking
-//   · Core affinity: network on core 0, inference on core 1
-//   · CUDA stream: dedicated, non-blocking, created on consumer thread
-//   · Warmup: 50 black-frame inferences force max P-state + JIT compilation
-//   · Frame assembly timeout: 12ms — discard stalled partial frames
+// 关键特性：
+//   · LIFO 队列（大小 1）— 消费者始终获取最新帧
+//   · 生产者从不等待 GPU — 零队头阻塞
+//   · 核心亲和性：网络在核心 0，推理在核心 1
+//   · CUDA 流：专用、非阻塞，在消费者线程上创建
+//   · 预热：50 帧黑帧推理强制最大 P 状态 + JIT 编译
+//   · 帧组装超时：12ms — 丢弃停滞的不完整帧
 //
-// Usage:
+// 用法：
 //   .\SynapseX_Client.exe [port] [enginePath] [hostIp] [--save]
-//   Defaults: port=8888 engine=../../model/bf416.engine hostIp=192.168.100.1
+//   默认值：port=8888 engine=../../model/bf416.engine hostIp=192.168.100.1
 
 #include "UdpReceiver.h"
 #include "TrtInference.h"
@@ -38,13 +38,13 @@
 #include <algorithm>
 
 // ═══════════════════════════════════════════════════════════════
-//  Global control
+//  全局控制
 // ═══════════════════════════════════════════════════════════════
 
 static std::atomic<bool> g_running{true};
 
 // ═══════════════════════════════════════════════════════════════
-//  Timing helpers
+//  计时辅助函数
 // ═══════════════════════════════════════════════════════════════
 
 using Clock     = std::chrono::high_resolution_clock;
@@ -55,7 +55,7 @@ static inline double ToMs(Clock::duration d) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Core affinity
+//  核心亲和性
 // ═══════════════════════════════════════════════════════════════
 
 static void PinThreadToCore(int core) {
@@ -71,7 +71,7 @@ static void PinThreadToCore(int core) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  BMP writer
+//  BMP 写入器
 // ═══════════════════════════════════════════════════════════════
 
 static bool SaveBgraAsBmp(const char* path,
@@ -112,7 +112,7 @@ static bool SaveBgraAsBmp(const char* path,
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LIFO Frame Slot (size-1 drop queue)
+//  LIFO 帧槽（大小-1 丢弃队列）
 // ═══════════════════════════════════════════════════════════════
 
 struct FrameSlot {
@@ -123,11 +123,11 @@ struct FrameSlot {
     uint16_t                roiW     = 0;
     uint16_t                roiH     = 0;
     bool                    hasNew   = false;
-    uint64_t                drops    = 0;  // frames overwritten before consumer read
+    uint64_t                drops    = 0;  // 在消费者读取前被覆盖的帧数
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  Consumer thread (inference)
+//  消费者线程（推理）
 // ═══════════════════════════════════════════════════════════════
 
 struct ConsumerCtx {
@@ -137,65 +137,65 @@ struct ConsumerCtx {
     bool                    trtReady;
     bool                    replyReady;
 
-    // stats (atomic, read by producer for reporting)
+    // 统计信息（原子类型，由生产者读取用于报告）
     std::atomic<uint64_t>   inferCount;
-    std::atomic<uint64_t>   frameCount;   // frames consumed
-    std::atomic<double>     sumInferMs;   // accumulated inference time (ms)
+    std::atomic<uint64_t>   frameCount;   // 已消费的帧数
+    std::atomic<double>     sumInferMs;   // 累计推理时间（毫秒）
 };
 
 static void ConsumerThread(ConsumerCtx* ctx) {
     PinThreadToCore(1);
 
-    // ── Set CUDA device (must be done on this thread) ────
+    // ── 设置CUDA设备（必须在此线程上执行）───────────────
     cudaError_t devErr = cudaSetDevice(0);
     if (devErr != cudaSuccess) {
-        fprintf(stderr, "[CONSUMER] cudaSetDevice(0) FAILED: %s\n",
+        fprintf(stderr, "[CONSUMER] cudaSetDevice(0) 失败: %s\n",
                 cudaGetErrorString(devErr));
         return;
     }
 
-    // ── Create dedicated CUDA stream ──────────────────────
+    // ── 创建专用的CUDA流 ─────────────────────────────────
     if (ctx->trtReady) {
         if (!ctx->trt->SetupStream()) {
-            fprintf(stderr, "[CONSUMER] SetupStream FAILED\n");
+            fprintf(stderr, "[CONSUMER] SetupStream 失败\n");
             ctx->trtReady = false;
         }
     }
 
-    // ── Init GPU preprocess (NVRTC, compiles kernel at runtime)
+    // ── 初始化GPU预处理（NVRTC，运行时编译内核）────────
     if (ctx->trtReady) {
         if (!SynapseX::InitCudaPreprocess()) {
-            fprintf(stderr, "[CONSUMER] InitCudaPreprocess FAILED\n");
+            fprintf(stderr, "[CONSUMER] InitCudaPreprocess 失败\n");
             ctx->trtReady = false;
         }
     }
 
-    // ── Load initial engine (modelId from host, default 0) ──
+    // ── 加载初始引擎（modelId 来自主机，默认 0）────────
     if (ctx->trtReady) {
         uint8_t initModel = g_targetModelId.load(std::memory_order_relaxed);
         if (!ctx->trt->LoadEngine(initModel)) {
-            fprintf(stderr, "[CONSUMER] LoadEngine(%u) FAILED. "
-                    "Inference disabled until valid modelId received.\n",
+            fprintf(stderr, "[CONSUMER] LoadEngine(%u) 失败. "
+                    "在收到有效 modelId 之前推理功能已禁用.\n",
                     initModel);
             ctx->trtReady = false;
         }
     }
 
-    // ── Warmup: 50 black dummy frames ─────────────────────
+    // ── 预热：50 帧黑色哑元帧 ───────────────────────────
     if (ctx->trtReady) {
-        fprintf(stderr, "[CONSUMER] Warming up GPU (50 dummy frames)...\n");
+        fprintf(stderr, "[CONSUMER] 正在预热 GPU（50 帧哑元帧）...\n");
         std::vector<uint8_t> black(
             ctx->trt->GetModelWidth() * ctx->trt->GetModelHeight() * 4, 0);
         for (int i = 0; i < 50 && g_running; ++i) {
             ctx->trt->Infer(black.data(), 0.9f);
         }
-        // CUDA sync to ensure warmup completes
+        // CUDA 同步以确保预热完成
         cudaDeviceSynchronize();
-        fprintf(stderr, "[CONSUMER] Warmup complete.\n");
+        fprintf(stderr, "[CONSUMER] 预热完成.\n");
     }
 
     // ═══════════════════════════════════════════════════════
-    //  CONSUMER MAIN LOOP
+    //  消费者主循环
     // ═══════════════════════════════════════════════════════
     constexpr int kPrintDetEvery = 30;
     uint64_t localFrameCount = 0;
@@ -205,10 +205,10 @@ static void ConsumerThread(ConsumerCtx* ctx) {
         uint32_t fid = 0;
         uint16_t rw = 0, rh = 0;
 
-        // ── Pop latest frame from LIFO slot ───────────────
+        // ── 从LIFO槽中弹出最新帧 ─────────────────────────
         {
             std::unique_lock<std::mutex> lock(ctx->slot->mtx);
-            // Wait up to 2ms for new data
+            // 最多等待 2ms 的新数据
             ctx->slot->cv.wait_for(lock, std::chrono::milliseconds(2),
                 [&]{ return ctx->slot->hasNew || !g_running; });
 
@@ -223,9 +223,9 @@ static void ConsumerThread(ConsumerCtx* ctx) {
             }
         }
 
-        if (frameData.empty()) continue;  // timeout, no new frame
+        if (frameData.empty()) continue;  // 超时，无新帧
 
-        // ── Run inference ─────────────────────────────────
+        // ── 运行推理 ─────────────────────────────────────
         if (ctx->trtReady &&
             rw == static_cast<uint16_t>(ctx->trt->GetModelWidth()) &&
             rh == static_cast<uint16_t>(ctx->trt->GetModelHeight())) {
@@ -239,12 +239,12 @@ static void ConsumerThread(ConsumerCtx* ctx) {
             ctx->sumInferMs.store(ctx->sumInferMs.load(std::memory_order_relaxed)
                                   + ToMs(t1 - t0), std::memory_order_relaxed);
 
-            // ── Send reply ────────────────────────────────
+            // ── 发送回复 ──────────────────────────────────
             if (ctx->replyReady && !dets.empty()) {
                 ctx->replySender->SendReplies(fid, dets);
             }
 
-            // ── Print detections periodically ─────────────
+            // ── 定期打印检测结果 ─────────────────────────
             if (localFrameCount % kPrintDetEvery == 0 && !dets.empty()) {
                 static const char* kApexCls[]    = {"enemy"};
                 static const char* kDeltaCls[]   = {"body", "head"};
@@ -264,7 +264,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
                     case 5: gameName="PUBG";    clsNames=kPubgCls;    numCls=2; break;
                     default: gameName="?";      clsNames=nullptr;     numCls=0; break;
                 }
-                fprintf(stderr, "[INFER] Frame #%llu (hostId=%u) [%s]: %zu detections\n",
+                fprintf(stderr, "[INFER] 帧 #%llu (hostId=%u) [%s]: %zu 个检测结果\n",
                         static_cast<unsigned long long>(localFrameCount),
                         fid, gameName, dets.size());
                 int show = std::min(static_cast<int>(dets.size()), 3);
@@ -291,7 +291,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
 // ═══════════════════════════════════════════════════════════════
 
 int main(int argc, char* argv[]) {
-    // ── Parse arguments ──────────────────────────────────
+    // ── 解析参数 ────────────────────────────────────────
     uint16_t listenPort = (argc > 1)
         ? static_cast<uint16_t>(std::atoi(argv[1])) : 8888;
     std::string enginePath = (argc > 2)
@@ -312,7 +312,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "  BMP dump:     %s\n", saveBmp ? "ON (--save)" : "OFF");
     fprintf(stderr, "============================================\n\n");
 
-    // ── Init modules (main thread) ───────────────────────
+    // ── 初始化模块（主线程） ────────────────────────────
     SynapseX::UdpReceiver receiver;
     if (!receiver.Initialize(listenPort)) {
         fprintf(stderr, "[FATAL] UdpReceiver init FAILED.\n");
@@ -332,10 +332,10 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "[WARN] Reply sender init FAILED.\n");
     }
 
-    // ── LIFO frame slot (shared between threads) ─────────
+    // ── LIFO 帧槽（在线程间共享） ──────────────────────
     FrameSlot slot;
 
-    // ── Consumer context ─────────────────────────────────
+    // ── 消费者上下文 ───────────────────────────────────
     ConsumerCtx consumerCtx;
     consumerCtx.slot         = &slot;
     consumerCtx.trt          = &trt;
@@ -346,19 +346,19 @@ int main(int argc, char* argv[]) {
     consumerCtx.frameCount   = 0;
     consumerCtx.sumInferMs   = 0.0;
 
-    // ── Spawn consumer thread ────────────────────────────
+    // ── 创建消费者线程 ──────────────────────────────────
     fprintf(stderr, "[INFO] Spawning consumer thread on core 1...\n");
     std::thread consumer(ConsumerThread, &consumerCtx);
 
-    // ── Pin producer (main thread) to core 0 ─────────────
+    // ── 将生产者（主线程）绑定到核心 0 ─────────────────
     PinThreadToCore(0);
 
     fprintf(stderr, "[INFO] Producer on core 0. Waiting for Host data...\n");
     fprintf(stderr, "[INFO] Press Ctrl+C to stop.\n\n");
 
-    // ── Producer state ───────────────────────────────────
+    // ── 生产者状态 ─────────────────────────────────────
     std::vector<uint8_t> frameBuffer;
-    std::vector<uint8_t> bmpBuffer;        // for --save
+    std::vector<uint8_t> bmpBuffer;        // 用于 --save
     uint32_t receivedFrameId = 0;
     uint64_t producerFrames  = 0;
     uint16_t bmpRoiW = 0, bmpRoiH = 0;
@@ -374,14 +374,14 @@ int main(int argc, char* argv[]) {
     double   sumRecvMs   = 0.0;
     uint64_t timedFrames = 0;
 
-    // Frame assembly timeout: 12ms (= 2x 170Hz period)
+    // 帧组装超时：12ms（= 2 倍 170Hz 周期）
     TimePoint lastPacketTime = Clock::now();
 
     // ═══════════════════════════════════════════════════════
-    //  PRODUCER MAIN LOOP (core 0)
+    //  生产者主循环（核心 0）
     // ═══════════════════════════════════════════════════════
     while (g_running) {
-        // ── Receive & decompress ──────────────────────────
+        // ── 接收和解压 ──────────────────────────────────
         auto t0 = Clock::now();
         bool gotFrame = receiver.TryReceive(frameBuffer, receivedFrameId);
         auto t1 = Clock::now();
@@ -395,18 +395,18 @@ int main(int argc, char* argv[]) {
             sumRecvMs  += ToMs(t1 - t0);
             timedFrames++;
 
-            // BMP copy (before move)
+            // BMP 拷贝（在移动之前）
             if (saveBmp) {
                 bmpBuffer = frameBuffer;
                 bmpRoiW   = roiW;
                 bmpRoiH   = roiH;
             }
 
-            // ── LIFO push (overwrite old, notify consumer) ─
+            // ── LIFO 推送（覆盖旧的，通知消费者）───────
             {
                 std::lock_guard<std::mutex> lock(slot.mtx);
                 if (slot.hasNew) {
-                    slot.drops++;  // consumer hadn't picked up old frame
+                    slot.drops++;  // 消费者尚未取走旧帧
                 }
                 slot.data    = std::move(frameBuffer);
                 slot.frameId = receivedFrameId;
@@ -416,19 +416,18 @@ int main(int argc, char* argv[]) {
             }
             slot.cv.notify_one();
         } else {
-            // ── Frame assembly timeout check ──────────────
-            // If we have a partial frame stuck > 12ms with no new
-            // chunks, discard it.  This prevents hanging when Host
-            // stops mid-frame.
+            // ── 帧组装超时检查 ───────────────────────────
+            // 如果存在超过 12ms 无新数据块的部分帧，
+            // 丢弃它。这防止主机在帧中途停止时挂起。
             double stallMs = ToMs(Clock::now() - lastPacketTime);
-            (void)stallMs;  // reserved for future forced-reset
+            (void)stallMs;  // 为将来强制重置保留
             Sleep(0);
         }
 
-        // ── Per-second stats ──────────────────────────────
+        // ── 每秒统计 ─────────────────────────────────────
         double elapsed = ToMs(Clock::now() - windowStart) / 1000.0;
         if (elapsed >= 1.0) {
-            // BMP save (latest frame before this second)
+            // 保存BMP（这一秒之前的最近一帧）
             if (saveBmp && !bmpBuffer.empty() && bmpRoiW > 0) {
                 char bmpName[64];
                 snprintf(bmpName, sizeof(bmpName),
@@ -468,11 +467,11 @@ int main(int argc, char* argv[]) {
 
             if (packetsThisSec > 0 || framesThisSec > 0) {
                 fprintf(stderr,
-                    "---- per-second stats --------------------------------\n"
-                    "  ROI: %ux%u  |  FPS: %7.1f  |  fr: %5llu  |  "
-                    "drop: %5llu (%4.1f%%)  |  LIFO drops: %llu\n"
-                    "  recv: %6.2f ms  |  infer: %6.2f ms  |  "
-                    "total: %6.2f ms  |  infer/s: %5llu  |  BW: %6.2f MB/s\n",
+                    "---- 每秒统计 ---------------------------------------\n"
+                    "  ROI: %ux%u  |  FPS: %7.1f  |  帧: %5llu  |  "
+                    "丢帧: %5llu (%4.1f%%)  |  LIFO丢弃: %llu\n"
+                    "  接收: %6.2f ms  |  推理: %6.2f ms  |  "
+                    "总计: %6.2f ms  |  推理/秒: %5llu  |  带宽: %6.2f MB/s\n",
                     roiW, roiH, fps,
                     static_cast<unsigned long long>(framesThisSec),
                     static_cast<unsigned long long>(droppedThisSec),
@@ -483,7 +482,7 @@ int main(int argc, char* argv[]) {
                     MBps);
             }
 
-            // Reset per-second accumulators
+            // 重置每秒累加器
             prevFrames  = curFrames;
             prevDropped = curDropped;
             prevPackets = curPackets;
@@ -496,33 +495,33 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── Shutdown ──────────────────────────────────────────
+    // ── 关闭 ─────────────────────────────────────────────
     fprintf(stderr, "\n[INFO] Shutting down...\n");
     slot.cv.notify_all();
     consumer.join();
 
-    // ── Final report ─────────────────────────────────────
+    // ── 最终报告 ─────────────────────────────────────────
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
     fprintf(stderr, "\n============================================\n");
-    fprintf(stderr, "  Session Summary\n");
+    fprintf(stderr, "  会话摘要\n");
     fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  Duration:        %.1f sec\n", sessionSec);
-    fprintf(stderr, "  Producer frames: %llu\n",
+    fprintf(stderr, "  运行时长:       %.1f 秒\n", sessionSec);
+    fprintf(stderr, "  生产者帧数:     %llu\n",
             static_cast<unsigned long long>(producerFrames));
-    fprintf(stderr, "  Consumer frames: %llu\n",
+    fprintf(stderr, "  消费者帧数:     %llu\n",
             static_cast<unsigned long long>(
                 consumerCtx.frameCount.load(std::memory_order_relaxed)));
-    fprintf(stderr, "  LIFO overwrites: %llu\n",
+    fprintf(stderr, "  LIFO覆盖数:     %llu\n",
             static_cast<unsigned long long>(slot.drops));
-    fprintf(stderr, "  Total dropped:   %llu\n",
+    fprintf(stderr, "  总丢帧数:       %llu\n",
             static_cast<unsigned long long>(receiver.GetTotalDropped()));
-    fprintf(stderr, "  Total packets:   %llu\n",
+    fprintf(stderr, "  总数据包数:     %llu\n",
             static_cast<unsigned long long>(receiver.GetTotalPackets()));
-    fprintf(stderr, "  Total MB recv:   %.2f\n",
+    fprintf(stderr, "  总接收 MB:      %.2f\n",
             receiver.GetTotalBytes() / (1024.0 * 1024.0));
-    fprintf(stderr, "  Avg FPS:         %.1f\n",
+    fprintf(stderr, "  平均 FPS:       %.1f\n",
             sessionSec > 0.0 ? producerFrames / sessionSec : 0.0);
-    fprintf(stderr, "  BMPs saved:      %d\n", saveIndex);
+    fprintf(stderr, "  保存 BMP 数:    %d\n", saveIndex);
     fprintf(stderr, "============================================\n");
 
     trt.Cleanup();

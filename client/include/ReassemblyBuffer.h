@@ -1,23 +1,21 @@
 #pragma once
 
 // ─── ReassemblyBuffer ─────────────────────────────────────────
-// Out-of-order UDP chunk reassembly engine.
+// 乱序UDP数据块重组引擎。
 //
-// Follows HOST_SPEC.md Section 3 algorithm exactly:
-//   · Chunks are placed at offset = chunkIndex * MAX_PAYLOAD_SIZE
-//   · Duplicate chunks (via receivedMask) are silently dropped
-//   · Newer frameId → old partial frame is discarded immediately
-//     (the iron law of low-latency vision — never wait for stragglers)
-//   · Stale packets (frameId behind expectedFrameId) are dropped
+// 严格遵循 HOST_SPEC.md 第3节算法：
+//   · 数据块放置在偏移量 = chunkIndex * MAX_PAYLOAD_SIZE 处
+//   · 重复数据块（通过 receivedMask 检测）被静默丢弃
+//   · 更新的 frameId → 旧的未完整帧立即丢弃
+//     （低延迟视觉的铁律——绝不等待掉队者）
+//   · 过期数据包（frameId 落后于 expectedFrameId）被丢弃
 //
-// All buffers are pre-allocated to worst-case size (4096×4096 ROI)
-// to avoid heap allocations in the receive hot path.  In steady state
-// StartFrame() only reallocates data if the compressed frame exceeds
-// the current capacity, which with the worst-case pre-allocation
-// will never happen for any realistic ROI.
+// 所有缓冲区预分配到最坏情况大小（4096×4096 ROI），
+// 以避免接收热路径中的堆分配。在稳态下，
+// 仅当压缩帧超过当前容量时 StartFrame() 才会重新分配数据，
+// 而对于任何实际的 ROI，最坏情况预分配使这种情况永远不会发生。
 //
-// Supports dynamic ROI: frameWidth / frameHeight are carried from
-// the PacketHeader through to decompression verification.
+// 支持动态ROI：frameWidth / frameHeight 从 PacketHeader 传递到解压验证。
 
 #include "PacketHeader.h"
 
@@ -30,59 +28,57 @@
 
 namespace SynapseX {
 
-// ── Worst-case pre-allocation constants (4096 × 4096 ROI) ─────
-// Host may send any ROI from 416² through 4096².  We pre-allocate
-// for the worst case to guarantee zero heap allocation per frame.
+// ── 最坏情况预分配常量（4096 × 4096 ROI）─────────────────────
+// 主机可以发送从 416² 到 4096² 的任何 ROI。我们按最坏情况预分配，
+// 以保证每帧零堆分配。
 constexpr uint32_t kMaxRoiPixels       = 4096 * 4096;            // 16,777,216 px
 constexpr uint32_t kMaxRawFrameSize    = kMaxRoiPixels * 4;      // 67,108,864 bytes
 constexpr uint32_t kMaxCompressedSize  = 67372052;               // LZ4_compressBound(67108864)
 constexpr uint16_t kMaxChunks          = 48123;                  // ceil(67372052 / 1400)
 
-// ── Frame ID wrap-around-safe comparison ────────────────────
-// Returns true if `a` is newer than `b`, correctly handling
-// uint32_t wrap-around (at 170 Hz this wraps after ~290 days).
+// ── 帧ID环绕安全比较 ────────────────────────────────────────
+// 如果 `a` 比 `b` 更新则返回 true，正确处理
+// uint32_t 环绕（在 170 Hz 下约 290 天后环绕）。
 inline bool IsNewerFrameId(uint32_t a, uint32_t b) {
     return static_cast<int32_t>(a - b) > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ReassemblyBuffer
+//  ReassemblyBuffer 重组缓冲区
 // ═══════════════════════════════════════════════════════════════
 struct ReassemblyBuffer {
-    // ── Current frame state ──────────────────────────────────
-    uint32_t expectedFrameId = 0xFFFFFFFF;  // sentinel: no active frame
-    uint32_t totalSize       = 0;           // compressed size for active frame
-    uint16_t totalChunks     = 0;           // expected chunk count
-    uint16_t chunksReceived  = 0;           // unique chunks collected so far
-    uint16_t frameWidth      = 0;           // ROI width  (from PacketHeader)
-    uint16_t frameHeight     = 0;           // ROI height (from PacketHeader)
+    // ── 当前帧状态 ──────────────────────────────────────────
+    uint32_t expectedFrameId = 0xFFFFFFFF;  // 哨兵值：无活动帧
+    uint32_t totalSize       = 0;           // 活动帧的压缩大小
+    uint16_t totalChunks     = 0;           // 预期的数据块总数
+    uint16_t chunksReceived  = 0;           // 已收集的唯一数据块数
+    uint16_t frameWidth      = 0;           // ROI宽度（来自 PacketHeader）
+    uint16_t frameHeight     = 0;           // ROI高度（来自 PacketHeader）
 
-    // ── Convenience ─────────────────────────────────────────
+    // ── 便捷方法 ─────────────────────────────────────────────
     uint32_t GetRawFrameSize() const {
         return static_cast<uint32_t>(frameWidth) *
                static_cast<uint32_t>(frameHeight) * 4;
     }
 
-    // ── Pre-allocated storage ────────────────────────────────
-    // receivedMask: bitmask tracking which chunks have arrived.
-    // data:         reassembly buffer for compressed payload.
-    // Both are pre-allocated to worst-case size (4096² ROI).
+    // ── 预分配存储 ──────────────────────────────────────────
+    // receivedMask: 跟踪哪些数据块已到达的位掩码。
+    // data:         压缩负载的重组缓冲区。
+    // 两者都预分配到最坏情况大小（4096² ROI）。
     std::vector<bool>    receivedMask;
     std::vector<uint8_t> data;
 
-    // ── Constructor: pre-allocate to worst-case ──────────────
+    // ── 构造函数：预分配到最坏情况 ──────────────────────────
     ReassemblyBuffer() {
         receivedMask.reserve(kMaxChunks);
         data.reserve(kMaxCompressedSize);
     }
 
     // ── StartFrame ───────────────────────────────────────────
-    // Begin collecting a new frame. Any partial old frame is
-    // irrevocably discarded (the caller must have already counted
-    // it as dropped if it was incomplete).
+    // 开始收集新帧。任何旧的未完成帧都会被
+    // 不可撤销地丢弃（如果未完成，调用方必须已将其计为丢弃）。
     //
-    // width/height are extracted from PacketHeader and carried
-    // through to decompression verification.
+    // width/height 从 PacketHeader 中提取并传递到解压验证。
     void StartFrame(uint32_t frameId,
                     uint32_t totalSz,
                     uint16_t totalCh,
@@ -95,9 +91,8 @@ struct ReassemblyBuffer {
         frameWidth      = width;
         frameHeight     = height;
 
-        // Enlarge data buffer only if this frame's compressed
-        // payload exceeds pre-allocated capacity.  With 64 MiB
-        // worst-case pre-allocation, this never fires in practice.
+        // 仅当此帧的压缩负载超过预分配容量时才扩大数据缓冲区。
+        // 使用 64 MiB 最坏情况预分配，实践中永远不会触发此操作。
         if (data.size() < totalSz) {
             data.resize(totalSz);
         }
@@ -106,15 +101,15 @@ struct ReassemblyBuffer {
     }
 
     // ── InsertChunk ──────────────────────────────────────────
-    // Copy `payload` (payloadSize bytes) into the reassembly
-    // buffer at offset = chunkIndex * MAX_PAYLOAD_SIZE.
-    // Returns true if the chunk was new (not a duplicate).
-    // Returns false for: duplicate chunk, out-of-range index.
+    // 将 `payload`（payloadSize 字节）复制到重组缓冲区中
+    // 偏移量 = chunkIndex * MAX_PAYLOAD_SIZE 处。
+    // 如果数据块是新的（非重复）则返回 true。
+    // 对于重复数据块或超出范围索引返回 false。
     inline bool InsertChunk(uint16_t chunkIndex,
                             const uint8_t* payload,
                             uint16_t payloadSize) {
         if (chunkIndex >= totalChunks) return false;
-        if (receivedMask[chunkIndex]) return false;  // duplicate — drop
+        if (receivedMask[chunkIndex]) return false;  // 重复 — 丢弃
 
         const uint32_t offset = static_cast<uint32_t>(chunkIndex) * MAX_PAYLOAD_SIZE;
         std::memcpy(data.data() + offset, payload, payloadSize);
@@ -135,8 +130,7 @@ struct ReassemblyBuffer {
     }
 
     // ── Reset ────────────────────────────────────────────────
-    // Fully discard all state. Used on cleanup or after a
-    // completed frame is consumed.
+    // 完全丢弃所有状态。在清理或完成帧被消费后使用。
     void Reset() {
         expectedFrameId = 0xFFFFFFFF;
         totalSize       = 0;
@@ -145,7 +139,7 @@ struct ReassemblyBuffer {
         frameWidth      = 0;
         frameHeight     = 0;
         receivedMask.clear();
-        // data is intentionally preserved (reused capacity)
+        // data 有意保留（重用容量）
     }
 };
 

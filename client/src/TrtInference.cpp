@@ -1,13 +1,13 @@
 // ─── TrtInference.cpp ───────────────────────────────────────────
-// TensorRT 10.16 inference with hot-swappable engine support.
+// TensorRT 10.16 推理，支持热切换引擎。
 //
-// Engine hot-swap protocol:
-//   Producer (UdpReceiver) writes g_targetModelId from PacketHeader.
-//   Consumer (Infer) checks at start of each frame.
-//   If changed: sync stream → destroy old engine → load new → return empty.
-//   Next call: normal inference with new model.
+// 引擎热切换协议：
+//   Producer (UdpReceiver) 从 PacketHeader 写入 g_targetModelId。
+//   Consumer (Infer) 在每帧开始时检查。
+//   如果已更改：同步流 → 销毁旧引擎 → 加载新引擎 → 返回空结果。
+//   下次调用：使用新模型正常推理。
 //
-// Model ID mapping (→ model/engine/<name>.engine):
+// 模型ID映射（→ model/engine/<名称>.engine）：
 //   0: apex_enemy_416       1: delta_body_head_416
 //   2: bf6_enemy_self_416    3: ow2_enemy_416
 
@@ -25,13 +25,13 @@
 #include <fstream>
 #include <vector>
 
-// ── Global definition (declared extern in PacketHeader.h) ─
+// ── 全局定义（在 PacketHeader.h 中声明为 extern）────
 std::atomic<uint8_t> g_targetModelId{0};
 
 namespace SynapseX {
 
 // ═══════════════════════════════════════════════════════════════
-//  TRT Logger
+//  TRT 日志器
 // ═══════════════════════════════════════════════════════════════
 
 class TrtLogger : public nvinfer1::ILogger {
@@ -49,7 +49,7 @@ private:
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  Helpers
+//  辅助函数
 // ═══════════════════════════════════════════════════════════════
 
 static std::vector<char> LoadFile(const std::string& path) {
@@ -75,17 +75,17 @@ static size_t DimsVolume(const nvinfer1::Dims& dims) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Model ID → path mapping
+//  模型ID → 路径映射
 // ═══════════════════════════════════════════════════════════════
 
 std::string TrtInference::GetModelPath(uint8_t modelId) {
     switch (modelId) {
-        case 0:  return "../../model/engine/apex_enemy_416.engine";       // Apex Legends, 1 class: enemy
-        case 1:  return "../../model/engine/delta_body_head_416.engine";  // Delta Force, 2 classes: body, head
-        case 2:  return "../../model/engine/bf6_enemy_self_new.engine";   // Battlefield 6, 2 classes: enemy, teammate
-        case 3:  return "../../model/engine/ow2_enemy_416.engine";        // Overwatch 2, 1 class: enemy
-        case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs, 1 class: enemy
-        case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG, 2 classes: body, head
+        case 0:  return "../../model/engine/apex_enemy_416.engine";       // Apex Legends，1类：敌人
+        case 1:  return "../../model/engine/delta_body_head_416.engine";  // Delta Force，2类：身体，头部
+        case 2:  return "../../model/engine/bf6_enemy_self_new.engine";   // Battlefield 6，2类：敌人，队友
+        case 3:  return "../../model/engine/ow2_enemy_416.engine";        // Overwatch 2，1类：敌人
+        case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs，1类：敌人
+        case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG，2类：身体，头部
         default:
             fprintf(stderr, "[TrtInference] Unknown modelId=%u (valid: 0-5)\n", modelId);
             return "";
@@ -93,7 +93,7 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Initialize — create runtime only (no engine)
+//  Initialize — 仅创建运行时（无引擎）
 // ═══════════════════════════════════════════════════════════════
 
 TrtInference::~TrtInference() {
@@ -115,7 +115,7 @@ bool TrtInference::Initialize() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  UnloadEngine — destroy TRT engine + context + GPU buffers
+//  UnloadEngine — 销毁TRT引擎 + 上下文 + GPU缓冲区
 // ═══════════════════════════════════════════════════════════════
 
 void TrtInference::UnloadEngine() {
@@ -124,7 +124,7 @@ void TrtInference::UnloadEngine() {
     if (m_dOutput)    { cudaFree(m_dOutput);    m_dOutput    = nullptr; }
     m_outputBytes = 0;
 
-    // Context MUST be destroyed before engine
+    // 上下文必须在引擎之前销毁
     if (m_context) {
         delete static_cast<nvinfer1::IExecutionContext*>(m_context);
         m_context = nullptr;
@@ -136,18 +136,18 @@ void TrtInference::UnloadEngine() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LoadEngineFile — deserialize engine, create context, alloc IO
+//  LoadEngineFile — 反序列化引擎，创建上下文，分配IO
 // ═══════════════════════════════════════════════════════════════
 
 bool TrtInference::LoadEngineFile(const std::string& path) {
     if (!m_runtime) return false;
     if (path.empty()) return false;
 
-    // ── 1. Load file ────────────────────────────────────────
+    // ── 1. 加载文件 ─────────────────────────────────────────
     auto engineData = LoadFile(path);
     if (engineData.empty()) return false;
 
-    // ── 2. Deserialize engine ────────────────────────────────
+    // ── 2. 反序列化引擎 ─────────────────────────────────────
     auto* engine = static_cast<nvinfer1::IRuntime*>(m_runtime)
         ->deserializeCudaEngine(engineData.data(), engineData.size());
     if (!engine) {
@@ -157,7 +157,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     }
     m_engine = engine;
 
-    // ── 3. Create execution context ──────────────────────────
+    // ── 3. 创建执行上下文 ───────────────────────────────────
     auto* ctx = engine->createExecutionContext();
     if (!ctx) {
         fprintf(stderr, "[TrtInference] createExecutionContext FAILED\n");
@@ -165,7 +165,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     }
     m_context = ctx;
 
-    // ── 4. Allocate GPU IO buffers ───────────────────────────
+    // ── 4. 分配GPU IO缓冲区 ─────────────────────────────────
     int nbTensors = engine->getNbIOTensors();
     for (int i = 0; i < nbTensors; ++i) {
         const char* name = engine->getIOTensorName(i);
@@ -196,7 +196,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
         }
     }
 
-    // ── 5. Allocate BGRA staging buffer ─────────────────────
+    // ── 5. 分配BGRA暂存缓冲区 ─────────────────────────────
     size_t bgraBytes = static_cast<size_t>(m_modelW) * m_modelH * 4;
     cudaError_t cudaErr = cudaMalloc(&m_dBgraInput, bgraBytes);
     if (cudaErr != cudaSuccess) {
@@ -212,7 +212,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LoadEngine — public, maps modelId to path and loads
+//  LoadEngine — 公共方法，映射 modelId 到路径并加载
 // ═══════════════════════════════════════════════════════════════
 
 bool TrtInference::LoadEngine(uint8_t modelId) {
@@ -221,7 +221,7 @@ bool TrtInference::LoadEngine(uint8_t modelId) {
     std::string path = GetModelPath(modelId);
     if (path.empty()) return false;
 
-    // Destroy old engine first (if any)
+    // 先销毁旧引擎（如果有）
     UnloadEngine();
 
     if (!LoadEngineFile(path)) {
@@ -234,7 +234,7 @@ bool TrtInference::LoadEngine(uint8_t modelId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LoadEngineByPath — for standalone testing
+//  LoadEngineByPath — 用于独立测试
 // ═══════════════════════════════════════════════════════════════
 
 bool TrtInference::LoadEngineByPath(const std::string& path, uint8_t modelId) {
@@ -246,7 +246,7 @@ bool TrtInference::LoadEngineByPath(const std::string& path, uint8_t modelId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SetupStream
+//  SetupStream（设置CUDA流）
 // ═══════════════════════════════════════════════════════════════
 
 bool TrtInference::SetupStream() {
@@ -266,7 +266,7 @@ bool TrtInference::SetupStream() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Infer — with hot-swap check
+//  Infer — 带热切换检查
 // ═══════════════════════════════════════════════════════════════
 
 std::vector<Detection> TrtInference::Infer(
@@ -278,26 +278,26 @@ std::vector<Detection> TrtInference::Infer(
     auto* stream = reinterpret_cast<cudaStream_t>(m_stream);
 
     // ═══════════════════════════════════════════════════════════
-    //  Hot-swap check: did the host request a different model?
+    //  热切换检查：主机是否请求了不同的模型？
     // ═══════════════════════════════════════════════════════════
     uint8_t targetId = g_targetModelId.load(std::memory_order_relaxed);
     if (m_currentModelId != targetId) {
         fprintf(stderr, "[TrtInference] Model switch: %u → %u\n",
                 m_currentModelId, targetId);
 
-        // 1. Sync stream — ensure previous frame's GPU work is done
+        // 1. 同步流 — 确保前一帧的GPU工作已完成
         if (stream) cudaStreamSynchronize(stream);
 
-        // 2. Destroy old engine + context + IO buffers
+        // 2. 销毁旧引擎 + 上下文 + IO缓冲区
         UnloadEngine();
 
-        // 3. Load new engine
+        // 3. 加载新引擎
         std::string path = GetModelPath(targetId);
         if (path.empty() || !LoadEngineFile(path)) {
             fprintf(stderr, "[TrtInference] Hot-swap FAILED for modelId=%u. "
                     "Inference disabled until valid modelId received.\n",
                     targetId);
-            m_currentModelId = 255;  // force retry
+            m_currentModelId = 255;  // 强制重试
             return detections;
         }
 
@@ -305,30 +305,30 @@ std::vector<Detection> TrtInference::Infer(
         fprintf(stderr, "[TrtInference] Hot-swap OK. Now using model %u: %s\n",
                 targetId, path.c_str());
 
-        // 4. Return empty — discard stale frame (old image ≠ new model)
+        // 4. 返回空结果 — 丢弃过时帧（旧图像 ≠ 新模型）
         return detections;
     }
 
-    // No engine loaded yet (or hot-swap failed)
+    // 尚未加载引擎（或热切换失败）
     if (!m_context) return detections;
 
     // ═══════════════════════════════════════════════════════════
-    //  Normal GPU pipeline
+    //  正常GPU流水线
     // ═══════════════════════════════════════════════════════════
 
     const size_t bgraBytes = static_cast<size_t>(m_modelW) * m_modelH * 4;
 
-    // 1. Transfer raw BGRA H→D
+    // 1. 传输原始BGRA 主机→设备
     cudaMemcpyAsync(m_dBgraInput, bgra, bgraBytes,
                     cudaMemcpyHostToDevice, stream);
 
-    // 2. GPU kernel: BGRA → FP32 CHW RGB
+    // 2. GPU内核：BGRA → FP32 CHW RGB
     LaunchBgra8ToFp32ChwRgb(
         static_cast<const uint8_t*>(m_dBgraInput),
         static_cast<float*>(m_dInput),
         m_modelW, m_modelH, stream);
 
-    // 3. TRT inference
+    // 3. TRT 推理
     auto* ctx = static_cast<nvinfer1::IExecutionContext*>(m_context);
     bool ok = ctx->enqueueV3(stream);
     if (!ok) {
@@ -337,15 +337,15 @@ std::vector<Detection> TrtInference::Infer(
         return detections;
     }
 
-    // 4. Sync
+    // 4. 同步
     cudaStreamSynchronize(stream);
 
-    // 5. Copy output D→H
+    // 5. 复制输出 设备→主机
     std::vector<float> output(m_outputBytes / sizeof(float));
     cudaMemcpy(output.data(), m_dOutput, m_outputBytes,
                cudaMemcpyDeviceToHost);
 
-    // 6. Postprocess
+    // 6. 后处理
     for (int i = 0; i < m_numDets; ++i) {
         const float* row = &output[static_cast<size_t>(i) * 6];
         float conf = row[4];
@@ -365,11 +365,11 @@ std::vector<Detection> TrtInference::Infer(
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Cleanup
+//  Cleanup（清理）
 // ═══════════════════════════════════════════════════════════════
 
 void TrtInference::Cleanup() {
-    UnloadEngine();  // GPU buffers + context + engine
+    UnloadEngine();  // GPU缓冲区 + 上下文 + 引擎
     if (m_stream) {
         cudaStreamDestroy(reinterpret_cast<cudaStream_t>(m_stream));
         m_stream = nullptr;

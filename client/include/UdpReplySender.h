@@ -1,15 +1,15 @@
 #pragma once
 
 // ─── UdpReplySender ──────────────────────────────────────────
-// Sends inference detections back to Host over UDP.
+// 将推理检测结果通过UDP发送回主机。
 //
-// Lifecycle:
-//   1. Initialize(hostIp, port) — create UDP socket, set target.
-//   2. SendReplies(frameId, dets) — pack and fire single datagram.
-//   3. Cleanup() — close socket.
+// 生命周期：
+//   1. Initialize(hostIp, port) — 创建UDP套接字，设置目标。
+//   2. SendReplies(frameId, dets) — 打包并发送单个数据报。
+//   3. Cleanup() — 关闭套接字。
 //
-// The reply datagram is: ReplyHeader (16B) + DetectionRaw[] (N×24B).
-// All fields are little-endian (native x64).
+// 回复数据报格式：ReplyHeader (16B) + DetectionRaw[] (N×24B)
+// 所有字段均为小端序（原生 x64）。
 
 #include <cstdint>
 #include <string>
@@ -18,7 +18,7 @@
 
 namespace SynapseX {
 
-struct Detection;  // forward from TrtInference.h
+struct Detection;  // 从 TrtInference.h 前向声明
 
 class UdpReplySender {
 public:
@@ -30,11 +30,11 @@ public:
     UdpReplySender(UdpReplySender&&) = delete;
     UdpReplySender& operator=(UdpReplySender&&) = delete;
 
-    // Connect to Host's reply port (usually 8889).
+    // 连接到主机的回复端口（通常为 8889）。
     bool Initialize(const std::string& hostIp, uint16_t port = 8889);
 
-    // Send detection results for a single frame to Host.
-    // dets: inference output (max 50, silently truncated if exceeded).
+    // 将单帧的检测结果发送给主机。
+    // dets: 推理输出（最多50个，超出则静默截断）。
     bool SendReplies(uint32_t frameId, const std::vector<Detection>& dets);
 
     void Cleanup();

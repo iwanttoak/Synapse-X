@@ -1,9 +1,8 @@
 // ─── CudaPreprocess.cpp ────────────────────────────────────────
-// GPU BGRA8 → FP32 CHW RGB preprocessing via NVRTC runtime compilation.
+// GPU BGRA8 → FP32 CHW RGB 预处理，通过 NVRTC 运行时编译实现。
 //
-// Completely avoids build-time nvcc dependency. The CUDA kernel is
-// stored as a string and compiled by NVRTC at init time. Compiled
-// PTX is cached for the lifetime of the process.
+// 完全避免构建时对 nvcc 的依赖。CUDA 内核以字符串形式存储，
+// 在初始化时由 NVRTC 编译。编译后的 PTX 在处理过程的生命周期内缓存。
 
 #include "CudaPreprocess.h"
 
@@ -19,7 +18,7 @@
 namespace SynapseX {
 
 // ═══════════════════════════════════════════════════════════════
-//  CUDA kernel source (embedded string)
+//  CUDA 内核源码（嵌入式字符串）
 // ═══════════════════════════════════════════════════════════════
 
 static const char* kKernelSource = R"(
@@ -48,7 +47,7 @@ extern "C" __global__ void Bgra8ToFp32ChwRgbKernel(
 )";
 
 // ═══════════════════════════════════════════════════════════════
-//  Cached state (initialized once)
+//  缓存状态（一次性初始化）
 // ═══════════════════════════════════════════════════════════════
 
 static bool        s_initialized = false;
@@ -68,13 +67,13 @@ static void CheckCudaError(CUresult err, const char* tag) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  InitCudaPreprocess
+//  InitCudaPreprocess（初始化CUDA预处理）
 // ═══════════════════════════════════════════════════════════════
 
 bool InitCudaPreprocess() {
     if (s_initialized) return true;
 
-    // ── 1. Create NVRTC program ───────────────────────────
+    // ── 1. 创建 NVRTC 程序 ─────────────────────────────────
     nvrtcProgram prog = nullptr;
     nvrtcResult nvr = nvrtcCreateProgram(&prog, kKernelSource,
         "Bgra8ToFp32ChwRgbKernel", 0, nullptr, nullptr);
@@ -84,8 +83,8 @@ bool InitCudaPreprocess() {
         return false;
     }
 
-    // ── 2. Compile ────────────────────────────────────────
-    // Use compute_86 for broad GPU support (PTX JIT handles newer archs)
+    // ── 2. 编译 ────────────────────────────────────────────
+    // 使用 compute_86 以获得广泛的 GPU 支持（PTX JIT 处理更新的架构）
     const char* opts[] = {
         "--gpu-architecture=compute_86",
         "-std=c++17",
@@ -94,7 +93,7 @@ bool InitCudaPreprocess() {
     };
     nvr = nvrtcCompileProgram(prog, 4, opts);
 
-    // ── 3. Get compilation log (always, for diagnostics) ──
+    // ── 3. 获取编译日志（总是获取，用于诊断）────────────
     size_t logSize = 0;
     nvrtcGetProgramLogSize(prog, &logSize);
     if (logSize > 1) {
@@ -111,7 +110,7 @@ bool InitCudaPreprocess() {
         return false;
     }
 
-    // ── 4. Get compiled PTX ───────────────────────────────
+    // ── 4. 获取编译后的 PTX ─────────────────────────────────
     size_t ptxSize = 0;
     nvrtcGetPTXSize(prog, &ptxSize);
     std::vector<char> ptx(ptxSize);
@@ -121,14 +120,14 @@ bool InitCudaPreprocess() {
     fprintf(stderr, "[CudaPreprocess] Kernel compiled. PTX: %zu bytes\n",
             ptxSize);
 
-    // ── 5. Load PTX into CUDA module ──────────────────────
+    // ── 5. 将 PTX 加载到 CUDA 模块中 ──────────────────────
     CUresult cu = cuModuleLoadData(&s_module, ptx.data());
     if (cu != CUDA_SUCCESS) {
         CheckCudaError(cu, "cuModuleLoadData");
         return false;
     }
 
-    // ── 6. Get kernel function handle ─────────────────────
+    // ── 6. 获取内核函数句柄 ───────────────────────────────
     cu = cuModuleGetFunction(&s_kernel, s_module,
                              "Bgra8ToFp32ChwRgbKernel");
     if (cu != CUDA_SUCCESS) {
@@ -144,7 +143,7 @@ bool InitCudaPreprocess() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LaunchBgra8ToFp32ChwRgb
+//  LaunchBgra8ToFp32ChwRgb（启动内核）
 // ═══════════════════════════════════════════════════════════════
 
 void LaunchBgra8ToFp32ChwRgb(
@@ -159,13 +158,13 @@ void LaunchBgra8ToFp32ChwRgb(
         return;
     }
 
-    // Kernel launch config
+    // 内核启动配置
     const dim3 block(16, 16);
     const dim3 grid(
         (static_cast<unsigned int>(width)  + block.x - 1) / block.x,
         (static_cast<unsigned int>(height) + block.y - 1) / block.y);
 
-    // Args: d_bgra, d_rgb_chw, width, height
+    // 参数：d_bgra, d_rgb_chw, width, height
     void* args[] = {
         const_cast<uint8_t**>(&d_bgra),
         &d_rgb_chw,
@@ -175,12 +174,12 @@ void LaunchBgra8ToFp32ChwRgb(
 
     CUresult cu = cuLaunchKernel(
         s_kernel,
-        grid.x,  grid.y,  1,       // grid
-        block.x, block.y, 1,       // block
-        0,                          // shared memory
-        stream,                     // CUDA stream
-        args,                       // kernel params
-        nullptr                     // extra
+        grid.x,  grid.y,  1,       // 网格
+        block.x, block.y, 1,       // 块
+        0,                          // 共享内存
+        stream,                     // CUDA 流
+        args,                       // 内核参数
+        nullptr                     // 额外
     );
 #ifdef _DEBUG
     CheckCudaError(cu, "cuLaunchKernel");

@@ -1,14 +1,14 @@
 // ─── UdpReceiver.cpp ───────────────────────────────────────────
-// Non-blocking UDP receive loop + out-of-order reassembly + LZ4 decompress.
+// 非阻塞UDP接收循环 + 乱序重组 + LZ4解压。
 //
-// Hot path: TryReceive() drains all queued datagrams, reassembles
-// chunks using ReassemblyBuffer, and decompresses complete frames.
-// All buffers are pre-allocated — zero heap allocation per frame.
+// 热路径：TryReceive() 排空所有排队的数据报，使用 ReassemblyBuffer
+// 重组数据块，并解压完整帧。
+// 所有缓冲区预分配 — 每帧零堆分配。
 //
-// UDP datagram layout (updated 20-byte PacketHeader):
+// UDP 数据报布局（更新的 20 字节 PacketHeader）：
 //   ┌─────────────────────────┬────────────────────────────────┐
-//   │     PacketHeader        │       payload (LZ4 slice)      │
-//   │      20 bytes           │        ≤ MAX_PAYLOAD_SIZE      │
+//   │     PacketHeader        │       payload (LZ4 分片)       │
+//   │      20 字节           │        ≤ MAX_PAYLOAD_SIZE      │
 //   └─────────────────────────┴────────────────────────────────┘
 
 #include "UdpReceiver.h"
@@ -24,7 +24,7 @@
 namespace SynapseX {
 
 // ═══════════════════════════════════════════════════════════════
-//  Lifecycle
+//  生命周期
 // ═══════════════════════════════════════════════════════════════
 
 UdpReceiver::~UdpReceiver() {
@@ -34,7 +34,7 @@ UdpReceiver::~UdpReceiver() {
 bool UdpReceiver::Initialize(uint16_t port) {
     if (m_initialized) Cleanup();
 
-    // ── WinSock startup ──────────────────────────────────
+    // ── WinSock 启动 ────────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         fprintf(stderr, "[UdpReceiver] WSAStartup FAILED: %d\n", WSAGetLastError());
@@ -42,7 +42,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
     }
     m_wsaStarted = true;
 
-    // ── Create UDP socket ────────────────────────────────
+    // ── 创建UDP套接字 ──────────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
         fprintf(stderr, "[UdpReceiver] socket() FAILED: %d\n", WSAGetLastError());
@@ -50,9 +50,9 @@ bool UdpReceiver::Initialize(uint16_t port) {
         return false;
     }
 
-    // ── Set non-blocking mode ────────────────────────────
-    // This is critical: we want to drain ALL queued packets
-    // without ever blocking on recvfrom.
+    // ── 设置非阻塞模式 ──────────────────────────────────
+    // 这很关键：我们希望排空所有排队的数据包，
+    // 而不会在 recvfrom 上阻塞。
     u_long nonBlocking = 1;
     if (ioctlsocket(m_socket, FIONBIO, &nonBlocking) != 0) {
         fprintf(stderr, "[UdpReceiver] ioctlsocket(FIONBIO) FAILED: %d\n",
@@ -61,16 +61,16 @@ bool UdpReceiver::Initialize(uint16_t port) {
         return false;
     }
 
-    // ── Enlarge receive buffer ───────────────────────────
+    // ── 扩大接收缓冲区 ─────────────────────────────────
     int bufSize = 256 * 1024;  // 256 KB
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF,
                reinterpret_cast<const char*>(&bufSize), sizeof(bufSize));
 
-    // ── Bind to local port ───────────────────────────────
+    // ── 绑定到本地端口 ─────────────────────────────────
     sockaddr_in localAddr = {};
     localAddr.sin_family      = AF_INET;
     localAddr.sin_port        = htons(port);
-    localAddr.sin_addr.s_addr = INADDR_ANY;  // listen on all interfaces
+    localAddr.sin_addr.s_addr = INADDR_ANY;  // 监听所有接口
 
     if (bind(m_socket, reinterpret_cast<const sockaddr*>(&localAddr),
              sizeof(localAddr)) == SOCKET_ERROR) {
@@ -80,18 +80,18 @@ bool UdpReceiver::Initialize(uint16_t port) {
         return false;
     }
 
-    // m_decompressBuf is NOT pre-sized here — it grows lazily
-    // on the first complete frame based on PacketHeader width/height.
+    // m_decompressBuf 在此处不预先调整大小 — 它在第一个完整帧时
+    // 根据 PacketHeader 的宽度/高度惰性增长。
 
     m_initialized = true;
     fprintf(stderr, "[UdpReceiver] Ready -- listening on 0.0.0.0:%u, "
-            "non-blocking, recv buffer %d KB, dynamic ROI\n",
+            "非阻塞, 接收缓冲区 %d KB, 动态ROI\n",
             port, bufSize / 1024);
     return true;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  TryReceive (hot path)
+//  TryReceive（热路径）
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
@@ -100,7 +100,7 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
 
     bool anyFrameCompleted = false;
 
-    // ── Drain ALL queued UDP datagrams ────────────────────
+    // ── 排空所有排队的UDP数据报 ──────────────────────────
     while (true) {
         sockaddr_in fromAddr = {};
         int fromLen = sizeof(fromAddr);
@@ -114,16 +114,16 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
         if (bytes == SOCKET_ERROR) {
             int err = WSAGetLastError();
             if (err == WSAEWOULDBLOCK) {
-                // No more data in socket buffer — exit drain loop.
+                // 套接字缓冲区中没有更多数据 — 退出排空循环。
                 break;
             }
-            // Real error (unlikely in steady state)
+            // 真实错误（稳态下不太可能）
             fprintf(stderr, "[UdpReceiver] recvfrom ERROR: %d\n", err);
             break;
         }
 
         if (bytes < static_cast<int>(sizeof(PacketHeader))) {
-            // Datagram too small — drop silently.
+            // 数据报过小 — 静默丢弃。
             continue;
         }
 
@@ -136,10 +136,10 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
         }
     }
 
-    // ── Return the latest completed frame ─────────────────
+    // ── 返回最新的完整帧 ────────────────────────────────
     if (anyFrameCompleted) {
-        // m_decompressBuf was already resized and filled by
-        // DecompressCurrentFrame.  Copy to caller verbatim.
+        // m_decompressBuf 已由 DecompressCurrentFrame 调整大小并填充。
+        // 原样复制给调用方。
         outFrame = m_decompressBuf;
         outFrameId = m_lastDecodedFrameId;
         return true;
@@ -149,31 +149,31 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ProcessDatagram — per-packet logic
+//  ProcessDatagram — 逐数据包逻辑
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
-    // ── 1. Parse header ───────────────────────────────────
+    // ── 1. 解析头部 ─────────────────────────────────────────
     const auto* header = reinterpret_cast<const PacketHeader*>(data);
 
-    // ── 2. Validate magic ─────────────────────────────────
+    // ── 2. 验证魔数 ─────────────────────────────────────────
     if (header->magic != PROTOCOL_MAGIC) {
-        // Not our protocol — drop silently.
+        // 不是我们的协议 — 静默丢弃。
         return false;
     }
 
-    // ── 3. Extract payload ────────────────────────────────
+    // ── 3. 提取负载 ─────────────────────────────────────────
     const uint8_t* payload = data + sizeof(PacketHeader);
     const uint16_t payloadSize = header->payloadSize;
 
-    // Safety check: payload must fit within received datagram
+    // 安全检查：负载必须适合收到的数据报
     if (static_cast<int>(sizeof(PacketHeader) + payloadSize) > len) {
         fprintf(stderr, "[UdpReceiver] Truncated datagram: header says %u payload, "
                 "got %d total bytes\n", payloadSize, len);
         return false;
     }
 
-    // ── 4. Frame transition logic ─────────────────────────
+    // ── 4. 帧转换逻辑 ───────────────────────────────────────
     const uint32_t frameId      = header->frameId;
     const uint32_t totalSize    = header->totalSize;
     const uint16_t totalChunks  = header->totalChunks;
@@ -184,13 +184,13 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
     const uint8_t modelId = header->modelId;
 
     if (!m_buffer.HasActiveFrame()) {
-        // First frame ever — start collecting.
+        // 第一帧 — 开始收集。
         m_buffer.StartFrame(frameId, totalSize, totalChunks,
                             frameWidth, frameHeight);
         m_activeFrameIncomplete = true;
         g_targetModelId.store(modelId, std::memory_order_relaxed);
     } else if (IsNewerFrameId(frameId, m_buffer.expectedFrameId)) {
-        // Newer frame arrived — flush old partial frame.
+        // 更新的帧到达 — 刷新旧的不完整帧。
         if (m_activeFrameIncomplete) {
             m_totalDropped++;
         }
@@ -199,49 +199,49 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
         m_activeFrameIncomplete = true;
         g_targetModelId.store(modelId, std::memory_order_relaxed);
     } else if (frameId != m_buffer.expectedFrameId) {
-        // Stale packet from an older frame — drop.
+        // 来自旧帧的过期数据包 — 丢弃。
         return false;
     }
-    // else: frameId == expectedFrameId — continue collecting.
+    // else: frameId == expectedFrameId — 继续收集。
 
-    // ── 5. Insert chunk ───────────────────────────────────
+    // ── 5. 插入数据块 ───────────────────────────────────────
     bool inserted = m_buffer.InsertChunk(chunkIndex, payload, payloadSize);
     if (!inserted) {
-        // Duplicate or out-of-range — already handled.
+        // 重复或超出范围 — 已处理。
         return false;
     }
 
-    // ── 6. Check completion ───────────────────────────────
+    // ── 6. 检查完成状态 ─────────────────────────────────────
     if (m_buffer.IsComplete()) {
         m_activeFrameIncomplete = false;
-        // Detect frame ID gaps for drop-rate accounting.
+        // 检测帧ID间隔以计算丢帧率。
         if (m_hasDecodedAnyFrame) {
-            // Count skipped frame IDs (host sent but we never started).
-            // Use int32_t arithmetic to handle wrap correctly.
+            // 统计跳过的帧ID（主机已发送但我们从未开始）。
+            // 使用 int32_t 算术正确处理环绕。
             int32_t gap = static_cast<int32_t>(frameId - m_lastDecodedFrameId) - 1;
             if (gap > 0) {
                 m_totalDropped += static_cast<uint64_t>(gap);
             }
         }
 
-        // Decompress into m_decompressBuf (reused every frame).
-        // Width/height already stored in m_buffer from StartFrame.
+        // 解压到 m_decompressBuf（每帧重用）。
+        // 宽度/高度已从 StartFrame 存储在 m_buffer 中。
         bool ok = DecompressCurrentFrame(m_decompressBuf);
         if (ok) {
             m_totalFramesReceived++;
             m_lastDecodedFrameId = frameId;
             m_hasDecodedAnyFrame = true;
 
-            // Cache dimensions for caller to interpret outFrame
+            // 缓存尺寸供调用方解释 outFrame
             m_lastFrameWidth  = m_buffer.frameWidth;
             m_lastFrameHeight = m_buffer.frameHeight;
 
-            // Reset buffer for next frame.
+            // 重置缓冲区以准备下一帧。
             m_buffer.Reset();
 
-            return true;  // signal: frame completed
+            return true;  // 信号：帧已完成
         } else {
-            // Decompression failed — count as dropped, reset, continue.
+            // 解压失败 — 计为丢弃，重置，继续。
             m_totalDropped++;
             m_buffer.Reset();
         }
@@ -251,14 +251,14 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  DecompressCurrentFrame
+//  DecompressCurrentFrame（解压当前帧）
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpReceiver::DecompressCurrentFrame(std::vector<uint8_t>& outFrame) {
     const int compressedSize = static_cast<int>(m_buffer.totalSize);
     const uint32_t rawSize = m_buffer.GetRawFrameSize();
 
-    // Ensure output buffer is large enough (reuses capacity if shrinking)
+    // 确保输出缓冲区足够大（缩小时重用容量）
     outFrame.resize(rawSize);
 
     int result = LZ4_decompress_safe(
@@ -290,7 +290,7 @@ bool UdpReceiver::DecompressCurrentFrame(std::vector<uint8_t>& outFrame) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Cleanup
+//  Cleanup（清理）
 // ═══════════════════════════════════════════════════════════════
 
 void UdpReceiver::Cleanup() {

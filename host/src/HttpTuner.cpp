@@ -1,6 +1,6 @@
 // ─── HttpTuner.cpp ────────────────────────────────────────────
-// Embedded HTTP server for real-time aim parameter tuning.
-// Access from any device on the LAN at http://<host-ip>:9999
+// 用于实时瞄准参数调整的内嵌 HTTP 服务器。
+// 从局域网中任何设备访问 http://<主机IP>:9999
 
 #include "HttpTuner.h"
 
@@ -14,7 +14,7 @@
 namespace SynapseX {
 
 // ═══════════════════════════════════════════════════════════════
-//  JSON helpers (no library — hand-rolled for our tiny payloads)
+//  JSON 辅助函数（无第三方库 — 为我们的微型载荷手写）
 // ═══════════════════════════════════════════════════════════════
 
 static std::string jsonEscape(double v) {
@@ -35,18 +35,18 @@ static std::string jsonStr(const char* key, uint64_t val) {
     return std::string("\"") + key + "\":" + std::to_string(val);
 }
 
-// Simple float parser (std::stof would work but let's be explicit)
+// 简单的浮点数解析器（std::stof 也可用，但这里明确实现）
 static float parseFloat(const std::string& s) {
     return static_cast<float>(std::atof(s.c_str()));
 }
 
-// Parse a float value from JSON like: "smoothFactor":0.15
+// 从 JSON 中解析浮点数值，如："smoothFactor":0.15
 static bool extractFloat(const std::string& body, const char* key, float& out) {
     std::string search = std::string("\"") + key + "\":";
     auto pos = body.find(search);
     if (pos == std::string::npos) return false;
     pos += search.size();
-    // skip whitespace
+    // 跳过空白
     while (pos < body.size() && (body[pos] == ' ' || body[pos] == '\t')) pos++;
     auto end = pos;
     while (end < body.size() && (body[end] == '-' || body[end] == '.' ||
@@ -67,7 +67,7 @@ static bool extractBool(const std::string& body, const char* key, bool& out) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Lifecycle
+//  生命周期
 // ═══════════════════════════════════════════════════════════════
 
 HttpTuner::~HttpTuner() {
@@ -81,19 +81,19 @@ bool HttpTuner::Start(uint16_t port) {
     m_state.running = true;
     m_thread = std::thread(&HttpTuner::ServerThread, this);
 
-    // Brief wait for server to bind
+    // 短暂等待服务器绑定
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    fprintf(stderr, "[HttpTuner] Control panel ready at http://localhost:%u\n", port);
-    fprintf(stderr, "[HttpTuner] From other devices: http://<host-ip>:%u\n", port);
+    fprintf(stderr, "[HttpTuner] 控制面板已就绪，访问 http://localhost:%u\n", port);
+    fprintf(stderr, "[HttpTuner] 从其他设备访问：http://<主机IP>:%u\n", port);
     return true;
 }
 
 void HttpTuner::Stop() {
     if (m_state.running) {
         m_state.running = false;
-        // httplib's stop() is called via the server's destructor-like behavior
-        // when we join the thread. We signal via running=false
+        // httplib 的 stop() 通过类似析构函数的行为
+        // 在加入线程时调用。我们通过 running=false 发出信号。
         if (m_thread.joinable()) {
             m_thread.join();
         }
@@ -101,13 +101,13 @@ void HttpTuner::Stop() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Server thread
+//  服务器线程
 // ═══════════════════════════════════════════════════════════════
 
 void HttpTuner::ServerThread() {
     httplib::Server svr;
 
-    // ── GET / — serve control panel from disk ────────────
+    // ── GET / — 从磁盘提供控制面板页面 ────────────
     svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
         std::ifstream f("web/index.html");
         if (f) {
@@ -115,27 +115,26 @@ void HttpTuner::ServerThread() {
                               std::istreambuf_iterator<char>());
             res.set_content(html, "text/html; charset=utf-8");
         } else {
-            res.set_content("web/index.html not found. "
-                            "Place it next to the exe or in the working directory.",
+            res.set_content("找不到 web/index.html。"
+                            "请将其放在 exe 旁边或工作目录中。",
                             "text/plain");
         }
     });
 
-    // ── GET /api/state — return JSON snapshot ──────────
-    // Capture 'this' via the TuningState pointer that we
-    // pass through httplib's user data mechanism...
-    // Actually, let's use a lambda capture directly.
-    // httplib handlers are synchronous, so we can safely
-    // lock the mutex inside the handler.
+    // ── GET /api/state — 返回 JSON 快照 ──────────
+    // 通过 httplib 的用户数据机制捕获 'this' 指针...
+    // 实际上，我们直接使用 lambda 捕获。
+    // httplib 处理程序是同步的，因此我们可以安全地在
+    // 处理程序内部锁定互斥量。
     //
-    // Problem: we need 'this' in the handler. Use a raw pointer.
+    // 问题：处理程序中需要 'this'。使用原始指针。
     auto* pState = &m_state;
 
     svr.Get("/api/state", [this](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
         std::string json = "{";
-        // Config
+        // 配置
         json += "\"config\":{";
         json += jsonStr("Kp",            m_state.config.Kp) + ",";
         json += jsonStr("Kd",            m_state.config.Kd) + ",";
@@ -153,7 +152,7 @@ void HttpTuner::ServerThread() {
         json += jsonStr("modelId",      (int)m_state.config.modelId) + ",";
         json += jsonStr("aimEnabled",    m_state.aimEnabled);
         json += "},";
-        // Stats
+        // 统计
         json += jsonStr("sendFps",    m_state.sendFps) + ",";
         json += jsonStr("captureFps", m_state.captureFps) + ",";
         json += jsonStr("pipelineMs", m_state.pipelineMs) + ",";
@@ -161,7 +160,7 @@ void HttpTuner::ServerThread() {
         json += jsonStr("freshFrames", m_state.freshFrames) + ",";
         json += jsonStr("cacheFrames", m_state.cacheFrames) + ",";
         json += jsonStr("totalSent",  m_state.totalSent) + ",";
-        // Target
+        // 目标
         json += "\"target\":{";
         json += jsonStr("active",     m_state.target.active) + ",";
         json += jsonStr("screenX",    m_state.target.screenX) + ",";
@@ -175,7 +174,7 @@ void HttpTuner::ServerThread() {
         res.set_content(json, "application/json");
     });
 
-    // ── POST /api/config — update parameters ───────────
+    // ── POST /api/config — 更新参数 ───────────
     svr.Post("/api/config", [this](const httplib::Request& req, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(m_mutex);
         const auto& body = req.body;
@@ -199,13 +198,13 @@ void HttpTuner::ServerThread() {
         res.set_content("{\"ok\":true}", "application/json");
     });
 
-    // ── Bind and serve ─────────────────────────────────
+    // ── 绑定并服务 ─────────────────────────────────
     svr.set_keep_alive_max_count(1);
     svr.listen("0.0.0.0", m_state.serverPort);
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Thread-safe accessors
+//  线程安全的访问器
 // ═══════════════════════════════════════════════════════════════
 
 AimConfig HttpTuner::GetConfig() const {

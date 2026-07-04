@@ -1,13 +1,13 @@
 #pragma once
 
-// ── UDP fragmentation & send module ───────────────────────────
-// Splits a compressed LZ4 buffer into ≤1400-byte chunks,
-// wraps each in a PacketHeader, and fires them over UDP.
+// ── UDP 分片与发送模块 ──────────────────────────────────────
+// 将压缩后的 LZ4 缓冲区拆分成 ≤1400 字节的块，
+// 每块封装 PacketHeader 头部后通过 UDP 发送。
 //
-// Design constraints:
-//   · Zero heap allocation in the Send hot path (stack buffer only).
-//   · sendto() calls are the only syscall; header assembly is pure memcpy.
-//   · Socket send buffer is auto-sized for throughput.
+// 设计约束：
+//   · 发送热路径中零堆内存分配（仅使用栈缓冲区）。
+//   · sendto() 是唯一的系统调用；头部组装仅涉及 memcpy。
+//   · 套接字发送缓冲区自动调整大小以提升吞吐量。
 
 #include <cstdint>
 #include <string>
@@ -20,21 +20,21 @@ public:
     UdpSender() = default;
     ~UdpSender();
 
-    // Non-copyable, non-movable (owns socket)
+    // 不可拷贝、不可移动（持有套接字）
     UdpSender(const UdpSender&) = delete;
     UdpSender& operator=(const UdpSender&) = delete;
     UdpSender(UdpSender&&) = delete;
     UdpSender& operator=(UdpSender&&) = delete;
 
-    // Initialize WinSock, create UDP socket, set target address.
-    // targetIp: "127.0.0.1" for local loopback, or remote IP for deployment.
-    // port:     UDP port the Client listens on (default 8888).
+    // 初始化 WinSock，创建 UDP 套接字，设置目标地址。
+    // targetIp：本地环回用 "127.0.0.1"，远程部署用实际 IP。
+    // port：     客户端监听的 UDP 端口（默认 8888）。
     bool Initialize(const std::string& targetIp, uint16_t port = 8888);
 
-    // Fragment `compressedData` (totalSize bytes) and send over UDP.
-    // frameId: monotonically increasing frame counter, embedded in every chunk.
-    // width / height: ROI dimensions, embedded so Client can size its decoder.
-    // Returns true if ALL chunks were sent successfully.
+    // 将 `compressedData`（totalSize 字节）分片并通过 UDP 发送。
+    // frameId：单调递增的帧计数器，嵌入每个分片中。
+    // width / height：ROI 尺寸，嵌入以供客户端设定解码器大小。
+    // 返回 true 表示所有分片均发送成功。
     bool SendCompressedFrame(const uint8_t* compressedData,
                              uint32_t totalSize,
                              uint32_t frameId,

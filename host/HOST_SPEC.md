@@ -1,167 +1,166 @@
-# Synapse-X Host Specification
+# Synapse-X 主机端规范
 
-> The Host captures the desktop center ROI at a fixed 170 Hz, compresses with LZ4,
-> sends via UDP to the Client for inference, receives detection results back, and
-> drives mouse aim-assist via ddll64.dll.
+> 主机端以固定 170 Hz 频率捕获桌面中心 ROI，使用 LZ4 压缩，
+> 通过 UDP 发送至客户端进行推理，接收检测结果返回，
+> 并通过 ddll64.dll 驱动鼠标辅助瞄准。
 
 ---
 
-## Pipeline Overview
+## 流水线概览
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           HOST (this machine)                            │
-│  [Core 2, TIME_CRITICAL, 170 Hz fixed cadence]                           │
+│                           主机端（本机）                                  │
+│  [核心 2, TIME_CRITICAL, 170 Hz 固定节奏]                                │
 │                                                                          │
 │  ┌────────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────────┐ │
-│  │ DxgiCapturer│ → │Lz4Compressor│ → │ UdpSender │ → │  UDP :8888       │─│─→ Client
-│  │ GPU ROI     │   │ LZ4 fast(5) │   │ 4MB buf   │   │  ≤1420B/pkt, NB  │ │
+│  │ DxgiCapturer│ → │Lz4Compressor│ → │ UdpSender │ → │  UDP :8888       │─│─→ 客户端
+│  │ GPU ROI     │   │ LZ4 fast(5) │   │ 4MB buf   │   │  ≤1420B/包, NB   │ │
 │  │ ~0.05 ms    │   │ ~0.2 ms     │   │ ~0.05 ms  │   │                  │ │
 │  └────────────┘   └────────────┘   └──────────┘   └──────────────────┘ │
 │                                                                          │
 │  ┌──────────────────┐   ┌──────────────────┐                             │
-│  │ UdpReplyReceiver │ ← │  UDP :8889        │←── Client reply           │
+│  │ UdpReplyReceiver │ ← │  UDP :8889        │←── 客户端回复              │
 │  │ map → screen     │   │  ReplyHeader+Det[] │                             │
 │  └──────┬───────────┘   └──────────────────┘                             │
-│         │ target: highest-conf enemy, tie-break by distance              │
+│         │ 目标：置信度最高的敌人，平局按距离排序                                  │
 │         ▼                                                                │
 │  ┌──────────────────┐                                                    │
-│  │ MouseController   │   PD + sub-pixel accumulator + delay compensation  │
-│  │ ddll64.dll        │   Kp=0.4 Kd=0.05, 3px deadzone, head/body aim    │
+│  │ MouseController   │   PD + 亚像素累加器 + 延迟补偿                       │
+│  │ ddll64.dll        │   Kp=0.4 Kd=0.05, 3px 死区, 头部/身体瞄准          │
 │  └──────────────────┘                                                    │
 │                                                                          │
 │  ┌──────────────────┐                                                    │
-│  │ HttpTuner :9999   │   Web panel: Kp, Kd, aimRange, head/body, ...     │
+│  │ HttpTuner :9999   │   网页面板: Kp, Kd, aimRange, head/body, ...       │
 │  └──────────────────┘                                                    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Stage | Module | Typical latency |
+| 阶段 | 模块 | 典型延迟 |
 |-------|--------|-----------------|
-| Capture | `DxgiCapturer` — GPU CopySubresourceRegion (center ROI only), Map to RAM | ~0.05 ms |
-| Compress | `Lz4Compressor` — `LZ4_compress_fast(accel=5)`, pre-allocated buffer | ~0.2 ms |
-| Send | `UdpSender` — non-blocking, 4MB buffer, stack-allocated header+payload | ~0.05 ms |
-| Receive reply | `UdpReplyReceiver` — non-blocking drain, model→screen coord mapping | <0.01 ms |
-| Aim | `MouseController` — PD + sub-pixel + delay-comp + spatial lock + auto-stretch | <0.01 ms |
-| **Host total** | | **~0.35 ms** |
-| Client inference | `TrtInference` — GPU preprocess (NVRTC) + TRT FP16, stable | **~1.5–1.8 ms** |
-| **End-to-end** | | **~2 ms** (well under 5.88 ms budget @170 Hz) |
+| 捕获 | `DxgiCapturer` — GPU CopySubresourceRegion（仅中心 ROI），映射到内存 | ~0.05 ms |
+| 压缩 | `Lz4Compressor` — `LZ4_compress_fast(accel=5)`，预分配缓冲区 | ~0.2 ms |
+| 发送 | `UdpSender` — 非阻塞，4MB 缓冲区，栈分配头部+负载 | ~0.05 ms |
+| 接收回复 | `UdpReplyReceiver` — 非阻塞排空，模型→屏幕坐标映射 | <0.01 ms |
+| 瞄准 | `MouseController` — PD + 亚像素 + 延迟补偿 + 空间锁定 + 自动拉伸 | <0.01 ms |
+| **主机端总计** | | **~0.35 ms** |
+| 客户端推理 | `TrtInference` — GPU 预处理（NVRTC）+ TRT FP16，稳定 | **~1.5–1.8 ms** |
+| **端到端** | | **~2 ms**（远低于 170 Hz 时的 5.88 ms 预算） |
 
 ---
 
-## Modules
+## 模块
 
-### DxgiCapturer — GPU Screen Capture
+### DxgiCapturer — GPU 屏幕捕获
 
-- **API**: DXGI Desktop Duplication (D3D11)
-- **ROI**: Center-crop via `CopySubresourceRegion` — only the ROI rectangle is copied to a staging texture, then `Map`'d to system RAM.
-- **Format**: BGRA 8-bit (DXGI_FORMAT_B8G8R8A8_UNORM), top-down.
-- **Recovery**: Auto-rebuilds the D3D11/duplication pipeline on `DXGI_ERROR_ACCESS_LOST`.
-- **Multi-monitor**: Enumerates all outputs, picks the first attached desktop with non-zero area.
-- **Limitation**: Cannot capture Exclusive Fullscreen games (game bypasses desktop compositor). Use Borderless Windowed.
+- **API**：DXGI Desktop Duplication（D3D11）
+- **ROI**：通过 `CopySubresourceRegion` 中心裁剪——仅将 ROI 矩形复制到暂存纹理，然后 `Map` 到系统内存。
+- **格式**：BGRA 8 位（DXGI_FORMAT_B8G8R8A8_UNORM），自上而下。
+- **恢复**：在 `DXGI_ERROR_ACCESS_LOST` 时自动重建 D3D11/ duplication 管道。
+- **多显示器**：枚举所有输出，选择第一个面积非零的已连接桌面。
+- **限制**：无法捕获独占全屏游戏（游戏绕过桌面合成器）。请使用无边框窗口模式。
 
-### Lz4Compressor — LZ4 Block Compression
+### Lz4Compressor — LZ4 块压缩
 
-- **Function**: `LZ4_compress_fast(src, dst, srcSize, dstCap, acceleration=5)`.
-- **Buffers**: Pre-allocated to `LZ4_compressBound(rawSize)` — zero allocation in hot path.
-- **Acceleration**: 5 (trades ~5% compression ratio for ~50% CPU reduction). Game scenes with grass/particles cause excessive hash probing at accel=1.
-- **Compression ratio**: 3–30% of raw size depending on desktop content.
-- **Source**: Third-party LZ4 source compiled directly into the project (`thirdparty/lz4-1.10.0/lib/lz4.c`).
+- **函数**：`LZ4_compress_fast(src, dst, srcSize, dstCap, acceleration=5)`。
+- **缓冲区**：预分配为 `LZ4_compressBound(rawSize)`——热路径中零分配。
+- **加速**：5（以约 5% 压缩率换取约 50% CPU 减少）。包含草地/粒子的游戏场景在 accel=1 时会导致过度的哈希探测。
+- **压缩率**：原始大小的 3–30%，取决于桌面内容。
+- **来源**：第三方 LZ4 源码直接编译到项目中（`thirdparty/lz4-1.10.0/lib/lz4.c`）。
 
-### UdpSender — UDP Fragmentation & Send
+### UdpSender — UDP 分片与发送
 
-- **Protocol**: 20-byte `PacketHeader` + ≤1400-byte LZ4 payload per datagram.
-- **Buffer**: Stack-allocated `uint8_t[1420]` — zero heap allocation in send loop.
-- **Socket**: 4 MB `SO_SNDBUF`, **non-blocking** (`FIONBIO`). `sendto()` never blocks the main loop. If buffer is full, the packet is dropped (one frame at 170 Hz is invisible).
-- **Chunking**: `totalChunks = ceil(totalSize / 1400)`, offset = `chunkIndex × 1400`.
+- **协议**：每数据报 20 字节 `PacketHeader` + ≤1400 字节 LZ4 负载。
+- **缓冲区**：栈分配 `uint8_t[1420]`——发送循环中零堆分配。
+- **套接字**：4 MB `SO_SNDBUF`，**非阻塞**（`FIONBIO`）。`sendto()` 从不阻塞主循环。如果缓冲区满，则丢弃数据包（170 Hz 下丢失一帧不可见）。
+- **分片**：`totalChunks = ceil(totalSize / 1400)`，偏移量 = `chunkIndex × 1400`。
 
-### UdpReplyReceiver — Client Reply Listener
+### UdpReplyReceiver — 客户端回复监听器
 
-- **Port**: UDP 8889, non-blocking drain in the main loop.
-- **Protocol**: `ReplyHeader` (16 bytes, magic=0x5359) + `DetectionRaw[]` (24 bytes each, FP32).
-- **Mapping**: Model-pixel coords → screen coords: `screen = roiOffset + model`.
-- **Target selection**: Best enemy (classId=0) by confidence, tie-break by distance to screen center.
+- **端口**：UDP 8889，在主循环中非阻塞排空。
+- **协议**：`ReplyHeader`（16 字节，magic=0x5359）+ `DetectionRaw[]`（各 24 字节，FP32）。
+- **映射**：模型像素坐标 → 屏幕坐标：`screen = roiOffset + model`。
+- **目标选择**：按置信度选择最佳敌人（classId=0），平局按距屏幕中心距离排序。
 
-### MouseController — Aim-Assist
+### MouseController — 辅助瞄准
 
-- **DLL**: `ddll64.dll` — loaded at runtime via `LoadLibrary`/`GetProcAddress`.
-- **API**: `MoveR(dx, dy)` — relative mouse movement in pixels.
-- **Algorithm**: Exponential-decay approach — move `15% × distance` each frame.
-- **Constraints**: Only aim if target within 500px of screen center and confidence ≥ 0.25.
-- **Requires**: Administrator privileges (DLL needs elevation to inject input).
+- **DLL**：`ddll64.dll`——运行时通过 `LoadLibrary`/`GetProcAddress` 加载。
+- **API**：`MoveR(dx, dy)`——相对鼠标移动（像素）。
+- **算法**：指数衰减方法——每帧移动 `15% × 距离`。
+- **约束**：仅当目标在屏幕中心 500px 以内且置信度 ≥ 0.25 时瞄准。
+- **要求**：管理员权限（DLL 需要提升权限以注入输入）。
 
 ---
 
-## Performance Optimizations
+## 性能优化
 
-Three anti-degradation measures protect the pipeline under game load:
+三项抗退化措施保护游戏负载下的流水线：
 
-### 1. CPU Core Affinity
+### 1. CPU 核心亲和性
 
 ```cpp
-SetThreadAffinityMask(GetCurrentThread(), 1ULL << 2);  // Core 2
+SetThreadAffinityMask(GetCurrentThread(), 1ULL << 2);  // 核心 2
 SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 ```
 
-The OS scheduler bounces threads across cores, evicting L1/L2 cache each time.
-Pinning to a fixed P-core keeps the hot path (capture buffer, PD state, ring buffers)
-resident in cache, eliminating ~3-4ms of cache thrashing under load.
+操作系统调度器会在核心间来回切换线程，每次都会驱逐 L1/L2 缓存。
+固定到特定 P 核心可使热路径（捕获缓冲区、PD 状态、环形缓冲区）
+常驻缓存，消除负载下约 3-4ms 的缓存抖动。
 
-### 2. LZ4 Acceleration Tuning
+### 2. LZ4 加速调优
 
 ```cpp
-LZ4_compress_fast(src, dst, srcSize, dstCap, 5);  // accel=5, was 1
+LZ4_compress_fast(src, dst, srcSize, dstCap, 5);  // accel=5, 原为 1
 ```
 
-Game scenes (grass, particles, noise) produce high-entropy frames where LZ4's
-hash table probing dominates CPU time. Increasing acceleration skips hash table
-attempts, trading ~5% compression ratio for ~50% less CPU. Compression stays
-under 0.5ms even on noisy frames.
+游戏场景（草地、粒子、噪点）会产生高熵帧，此时 LZ4 的
+哈希表探测会主导 CPU 时间。增加加速值可跳过哈希表
+尝试，以约 5% 压缩率换取约 50% 更少的 CPU。即使在
+嘈杂帧上，压缩也保持在 0.5ms 以下。
 
-### 3. UDP Non-blocking + Large Buffer
+### 3. UDP 非阻塞 + 大缓冲区
 
 ```cpp
 ioctlsocket(sock, FIONBIO, &nonBlocking);
 setsockopt(sock, SOL_SOCKET, SO_SNDBUF, 4MB);
 ```
 
-- **4MB buffer**: absorbs ~80 frames of burst at 170 Hz before backpressure.
-- **Non-blocking**: `sendto()` returns immediately. If buffer is full, the
-  packet is dropped (one lost frame at 170 Hz is invisible to the eye).
-- This eliminates the 5ms+ blocking stalls seen when the network stack
-  throttles the sending rate under game load.
+- **4MB 缓冲区**：在 170 Hz 下可吸收约 80 帧的突发数据，之后才产生背压。
+- **非阻塞**：`sendto()` 立即返回。如果缓冲区满，
+  数据包被丢弃（170 Hz 下丢失一帧人眼不可见）。
+- 这消除了在游戏负载下网络栈节流发送速率时出现的 5ms+ 阻塞停顿。
 
-### Performance Summary
+### 性能总结
 
-| Scenario | Before | After |
+| 场景 | 优化前 | 优化后 |
 |----------|--------|-------|
-| Desktop idle | ~0.35 ms | ~0.30 ms |
-| Game (light) | ~1.5 ms | ~0.40 ms |
-| Game (heavy, grass/particles) | ~11 ms (BROKEN) | ~0.50 ms |
-| UDP backpressure | ~5 ms stall | 0 ms (non-blocking) |
+| 桌面空闲 | ~0.35 ms | ~0.30 ms |
+| 游戏（轻量） | ~1.5 ms | ~0.40 ms |
+| 游戏（繁重，草地/粒子） | ~11 ms（损坏） | ~0.50 ms |
+| UDP 背压 | ~5 ms 停顿 | 0 ms（非阻塞） |
 
 ---
 
-## Usage
+## 使用方式
 
 ```powershell
-# Default: 640×640 to 192.168.100.2:8888
+# 默认：640×640 到 192.168.100.2:8888
 .\SynapseX_Host.exe
 
-# Custom target and ROI (e.g. 416×416 for YOLO models)
+# 自定义目标和 ROI（例如 YOLO 模型使用 416×416）
 .\SynapseX_Host.exe 192.168.100.2 8888 416 416
 
-# Full argument order
+# 完整参数顺序
 .\SynapseX_Host.exe [target_ip] [port] [width] [height]
 
-# Run as Administrator for mouse control
+# 以管理员身份运行以获得鼠标控制
 ```
 
-ROI constraints: 64–4096 pixels per dimension.
+ROI 约束：每维 64–4096 像素。
 
 ---
 
-## Build
+## 构建
 
 ```powershell
 cd host
@@ -169,151 +168,151 @@ cmake --preset windows-x64
 cmake --build build_x64 --config RelWithDebInfo
 ```
 
-Requires: CMake 3.28+, Visual Studio 2026 (MSVC 14.51), Windows SDK 10.0.26100+.
+要求：CMake 3.28+, Visual Studio 2026 (MSVC 14.51), Windows SDK 10.0.26100+。
 
-Dependencies: D3D11, DXGI, Winsock2 (system). LZ4 compiled from source in `../thirdparty/lz4-1.10.0/`.
+依赖项：D3D11, DXGI, Winsock2（系统）。LZ4 从 `../thirdparty/lz4-1.10.0/` 源码编译。
 
 ---
 
-## Directory Layout
+## 目录结构
 
 ```
 host/
 ├── include/
-│   ├── DxgiCapturer.h         GPU desktop duplication capture
-│   ├── Lz4Compressor.h         LZ4 block compression
-│   ├── UdpSender.h             UDP fragmentation + send
-│   ├── UdpReplyReceiver.h      UDP reply listener + coord mapping
-│   └── MouseController.h       ddll64.dll loader + aim-assist
+│   ├── DxgiCapturer.h         GPU 桌面副本捕获
+│   ├── Lz4Compressor.h         LZ4 块压缩
+│   ├── UdpSender.h             UDP 分片 + 发送
+│   ├── UdpReplyReceiver.h      UDP 回复监听 + 坐标映射
+│   └── MouseController.h       ddll64.dll 加载器 + 辅助瞄准
 ├── src/
-│   ├── main.cpp                fixed 170 Hz pipeline
+│   ├── main.cpp                固定 170 Hz 流水线
 │   ├── DxgiCapturer.cpp
 │   ├── Lz4Compressor.cpp
 │   ├── UdpSender.cpp
 │   ├── UdpReplyReceiver.cpp
 │   └── MouseController.cpp
 ├── test/
-│   └── test_bmp.cpp            standalone capture+compress test
+│   └── test_bmp.cpp            独立捕获+压缩测试
 ├── mousedll/
-│   └── ddll64.dll              mouse control DLL (committed to repo)
+│   └── ddll64.dll              鼠标控制 DLL（提交到仓库）
 ├── CMakeLists.txt
 ├── CMakePresets.json
-└── HOST_SPEC.md                this file
+└── HOST_SPEC.md                本文件
 ```
 
 ---
 
-## Wire Protocols
+## 线路协议
 
-### Host → Client (UDP :8888)
+### 主机端 → 客户端（UDP :8888）
 
-20-byte `PacketHeader` + LZ4 payload. See `shared/include/PacketHeader.h`.
+20 字节 `PacketHeader` + LZ4 负载。详见 `shared/include/PacketHeader.h`。
 
-### Client → Host (UDP :8889)
+### 客户端 → 主机端（UDP :8889）
 
-16-byte `ReplyHeader` + N × 24-byte `DetectionRaw`. See `shared/include/ReplyPacket.h`.
+16 字节 `ReplyHeader` + N × 24 字节 `DetectionRaw`。详见 `shared/include/ReplyPacket.h`。
 
-Both protocols are little-endian, `#pragma pack(1)`, with magic bytes for validation.
+两种协议均为小端序，`#pragma pack(1)`，带有用于验证的魔数。
 
 ---
 
-## Tuning
+## 调优
 
-### Aim parameters (in `main.cpp`)
+### 瞄准参数（在 `main.cpp` 中）
 
 ```cpp
 AimConfig cfg;
-cfg.smoothFactor  = 0.15f;   // fraction of remaining distance per frame
-cfg.aimRange      = 500.0f;  // max px from center to engage
-cfg.sensitivity   = 1.0f;    // game sensitivity multiplier
-cfg.minConfidence = 0.25f;   // ignore low-confidence detections
+cfg.smoothFactor  = 0.15f;   // 每帧剩余距离的比例
+cfg.aimRange      = 500.0f;  // 距中心最大像素距离以触发瞄准
+cfg.sensitivity   = 1.0f;    // 游戏灵敏度倍率
+cfg.minConfidence = 0.25f;   // 忽略低置信度检测
 ```
 
-### Frame rate
+### 帧率
 
-Fixed 170 Hz via `timeBeginPeriod(1)` + `sleep_until`. Pipeline latency ~0.35 ms means
-plenty of headroom. If the pipeline ever exceeds budget, the cadence resets to avoid
-death-spiral.
+通过 `timeBeginPeriod(1)` + `sleep_until` 固定 170 Hz。流水线延迟约 0.35 ms，
+留有充足余量。如果流水线超出预算，节奏会重置以避免
+死循环。
 
-### Desktop idle behavior
+### 桌面空闲行为
 
-When the desktop is static, the Host re-sends the cached compressed frame at 170 Hz.
-No re-compression cost — only the cached buffer is re-transmitted. This keeps the
-Client's inference pipeline fed with a steady stream.
-
----
-
-## Known Limitations
-
-1. **Exclusive Fullscreen**: Cannot capture. Switch game to Borderless Windowed.
-2. **Anti-cheat**: Some games actively block Desktop Duplication regardless of window mode.
-3. **Administrator**: Required for `ddll64.dll` mouse control.
-4. **Multi-GPU laptops**: May need to adjust adapter enumeration if capture targets wrong GPU.
+当桌面静止时，主机端以 170 Hz 重新发送缓存的压缩帧。
+无需重新压缩——仅重新传输缓存的缓冲区。这可以保持
+客户端的推理流水线持续接收稳定的数据流。
 
 ---
 
-## Active Issues (observed, needs fixing)
+## 已知限制
 
-### Host: Aiming Quality
+1. **独占全屏**：无法捕获。请将游戏切换为无边框窗口模式。
+2. **反作弊系统**：某些游戏无论窗口模式如何，都会主动阻止桌面副本。
+3. **管理员权限**：`ddll64.dll` 鼠标控制需要此项。
+4. **多 GPU 笔记本**：如果捕获目标指向错误的 GPU，可能需要调整适配器枚举。
 
-| # | Symptom | Suspected Cause | Fix Direction |
+---
+
+## 活跃问题（已观察到，需要修复）
+
+### 主机端：瞄准质量
+
+| # | 现象 | 疑似原因 | 修复方向 |
 |---|---------|-----------------|---------------|
-| A1 | ~~**Aim oscillation**~~ **FIXED** — PD controller + 3px deadzone | Exponential decay had no damping; now D-term provides braking force. Deadzone stops all movement within 3px. | ✅ |
-| A2 | ~~**Aim too slow**~~ **FIXED** — P-term provides proportional pull | Old 15%/frame was sluggish at distance. Kp=0.4 gives immediate proportional response; far targets move fast, close targets move slow naturally. | ✅ |
-| A3 | **Target switching** — jumps between enemies when confidence values flicker | Best-target selection is purely per-frame: `max(confidence)` with distance tie-break. A slightly higher-confidence detection on the next frame causes an instant switch. | Target lock: once a target is selected, require N consecutive frames of a *better* candidate before switching. Or hysteresis: new target must beat current by a margin (e.g. 0.1 confidence or 50px closer). |
-| A4 | **Lock not tight** — crosshair drifts off target during movement | No movement prediction. Target moves between frames but aim always aims at the *previous* frame's position. | Velocity estimation (EMA of position deltas across frames) + lead the target by `velocity * inference_latency`. |
+| A1 | ~~**瞄准振荡**~~ **已修复** — PD 控制器 + 3px 死区 | 指数衰减无阻尼；现在 D 项提供制动力。死区在 3px 内停止所有移动。 | ✅ |
+| A2 | ~~**瞄准太慢**~~ **已修复** — P 项提供比例拉力 | 老的 15%/帧在远距离时反应迟钝。Kp=0.4 提供即时比例响应；远目标移动快，近目标自然移动慢。 | ✅ |
+| A3 | **目标切换** — 置信度值闪烁时在敌人间跳跃 | 最佳目标选择纯粹基于每帧：`max(confidence)` 加距离平局判定。下一帧出现置信度略高的检测会导致立即切换。 | 目标锁定：一旦选中目标，要求连续 N 帧出现*更好*候选者后才切换。或者滞回：新目标必须以一定裕量超越当前目标（例如置信度高 0.1 或近 50px）。 |
+| A4 | **锁定不紧** — 移动时准星偏离目标 | 无移动预测。目标在帧间移动，但瞄准始终瞄准*上一帧*的位置。 | 速度估计（帧间位置差值的 EMA）+ 通过 `velocity * inference_latency` 提前瞄准目标。 |
 
-### Host: Aim Smoothing
+### 主机端：瞄准平滑
 
-| # | Symptom | Suspected Cause | Fix Direction |
+| # | 现象 | 疑似原因 | 修复方向 |
 |---|---------|-----------------|---------------|
-| B1 | **Linear decay feels robotic** | `moveX = dx * smoothFactor` produces a straight exponential curve. Human aim has micro-corrections, overshoot, and varying speed. | Add Perlin noise or sinusoidal perturbation at close range. Randomize smoothFactor slightly each frame (±10%). |
-| B2 | **No recoil compensation** | Game-specific recoil patterns are not modeled. After firing, crosshair climbs but aim-assist doesn't counteract it. | Per-game recoil table (simple array of (dx, dy) offsets per shot). Subtract from target position after each shot. |
+| B1 | **线性衰减感觉机械** | `moveX = dx * smoothFactor` 产生纯指数曲线。人类瞄准有微校正、过冲和变化的速度。 | 在近距离添加 Perlin 噪声或正弦扰动。每帧随机微调 smoothFactor（±10%）。 |
+| B2 | **无后坐力补偿** | 未建模游戏特定后坐力模式。开火后准星上移，但辅助瞄准不抵消它。 | 针对每个游戏的后坐力表（每发子弹的 (dx, dy) 偏移简单数组）。每发子弹后从目标位置减去。 |
 
-> Client-side performance issues (inference time spikes, GPU contention) are tracked in `client/CLIENT_SPEC.md`.
+> 客户端性能问题（推理时间尖峰、GPU 争用）在 `client/CLIENT_SPEC.md` 中跟踪。
 
 ---
 
-## Unimplemented / Future Work
+## 未实现 / 未来工作
 
-### Detection & Inference
+### 检测与推理
 
-| Issue | Current | Ideal |
+| 问题 | 当前 | 理想 |
 |-------|---------|-------|
-| **Detection jitter** | No temporal smoothing — bbox jumps frame-to-frame | Running average or EMA over last 3–5 frames to stabilize bbox corners. |
-| **Multi-class priority** | Picks best enemy by confidence+distance | Configurable priority list: e.g. `enemy > teammate` or `closest > highest-conf`. |
-| **ROI switching** | Set at startup, requires restart to change | Runtime ROI toggle via hotkey or UDP command. Useful for switching between 416 (inference) and 640 (visual check). |
+| **检测抖动** | 无时间平滑——边界框帧间跳动 | 过去 3–5 帧的运行平均或 EMA 以稳定边界框角点。 |
+| **多类别优先级** | 按置信度+距离选取最佳敌人 | 可配置优先级列表：例如 `敌人 > 队友` 或 `最近 > 最高置信度`。 |
+| **ROI 切换** | 启动时设置，需要重启才能更改 | 运行时通过热键或 UDP 命令切换 ROI。适用于在 416（推理）和 640（视觉检查）之间切换。 |
 
-### Observability & Tuning
+### 可观测性与调优
 
-| Issue | Current | Ideal |
+| 问题 | 当前 | 理想 |
 |-------|---------|-------|
-| **Parameter tuning** | Edit `main.cpp` and recompile | Web-based dashboard (localhost HTTP server) to adjust `smoothFactor`, `aimRange`, `sensitivity` in real-time with sliders. |
-| **Visual overlay** | Console-only text output | Transparent overlay window showing: capture preview with detection boxes, aim crosshair, FPS graph. |
-| **Replay / debug** | No recording | Save raw frames + detections to disk for offline tuning and debugging. |
+| **参数调优** | 编辑 `main.cpp` 并重新编译 | 基于网页的仪表盘（本地主机 HTTP 服务器），使用滑块实时调整 `smoothFactor`、`aimRange`、`sensitivity`。 |
+| **视觉覆盖层** | 仅控制台文本输出 | 透明覆盖窗口显示：带检测框的捕获预览、瞄准准星、FPS 图。 |
+| **回放 / 调试** | 无录制 | 将原始帧 + 检测结果保存到磁盘，用于离线调优和调试。 |
 
-### Performance
+### 性能
 
-| Issue | Current | Risk |
+| 问题 | 当前 | 风险 |
 |-------|---------|------|
-| **Idle re-transmit** | Re-sends cached frame at full 170 Hz even when desktop is static | Wastes ~5–50 MB/s on duplicate data. Could add a "skip-if-unchanged" mode that sends only 1 fps keep-alive when idle. |
-| **Single-threaded pipeline** | Capture → compress → send → reply → aim all on main thread | If any stage blocks (e.g. GPU Map stalls), the next tick is delayed. Could pipeline capture+compress on a separate thread. |
-| **Fixed LZ4 acceleration** | Always `acceleration=1` (fastest, lower ratio) | Could auto-tune: if pipeline has headroom, use higher acceleration for better ratio (less network traffic). |
-| **No QoS / prioritization** | All chunks treated equally | If a chunk is lost, the entire frame is dropped. Could add FEC (forward error correction) or retransmit last chunk for critical frames. |
-| **GPU contention** | DXGI capture competes with game for GPU time | On GPU-bound games, capture latency may spike. Could lower capture priority or use a secondary GPU for capture. |
+| **空闲时重传** | 即使桌面静止，也以完整 170 Hz 重新发送缓存帧 | 在重复数据上浪费约 5–50 MB/s。可添加"无变化时跳过"模式，空闲时仅发送 1 fps 保活信号。 |
+| **单线程流水线** | 捕获 → 压缩 → 发送 → 回复 → 瞄准全部在主线程 | 如果任何阶段阻塞（例如 GPU Map 停顿），下一节拍延迟。可将捕获+压缩放在单独线程上流水线化。 |
+| **固定 LZ4 加速** | 始终 `acceleration=1`（最快，压缩率较低） | 可自动调优：如果流水线有余量，使用更高加速以获得更好压缩率（更少网络流量）。 |
+| **无 QoS / 优先级** | 所有数据块同等对待 | 如果丢失一个数据块，整个帧被丢弃。可为关键帧添加 FEC（前向纠错）或重传最后一个数据块。 |
+| **GPU 争用** | DXGI 捕获与游戏争用 GPU 时间 | 在 GPU 密集型游戏上，捕获延迟可能飙升。可降低捕获优先级或使用辅助 GPU 进行捕获。 |
 
-### Robustness
+### 鲁棒性
 
-| Issue | Current | Ideal |
+| 问题 | 当前 | 理想 |
 |-------|---------|-------|
-| **UDP no retransmit** | Lost packet = corrupted frame at Client | Optional lightweight NACK-based retransmit for the last N frames. |
-| **Client disconnection** | Host keeps sending into void | Detect idle reply stream and alert user. Could auto-pause sending to save bandwidth. |
-| **Resolution change** | Handled (ACCESS_LOST auto-rebuild) | Currently works, but would benefit from notifying the Client of the new dimensions. |
+| **UDP 无重传** | 丢包 = 客户端接收到损坏的帧 | 可选轻量级基于 NACK 的重传，用于最近 N 帧。 |
+| **客户端断开连接** | 主机端持续向虚空发送数据 | 检测空闲回复流并提醒用户。可自动暂停发送以节省带宽。 |
+| **分辨率变化** | 已处理（ACCESS_LOST 自动重建） | 当前可工作，但最好通知客户端新的尺寸。 |
 
-### Integration
+### 集成
 
-| Issue | Current | Ideal |
+| 问题 | 当前 | 理想 |
 |-------|---------|-------|
-| **Hotkey toggle** | Ctrl+C kills everything | Bindable hotkeys: toggle aim on/off, switch target priority, toggle overlay. |
-| **Game profiles** | Single hardcoded `AimConfig` | Per-game config files (JSON/TOML) with sensitivity, aim range, class priorities. Auto-detect game by window title. |
-| **Multi-monitor game** | Captures output[0] only | Manual output selection via CLI arg `--output 1` for secondary monitor gaming. |
+| **热键开关** | Ctrl+C 终止所有内容 | 可绑定热键：开关瞄准、切换目标优先级、切换覆盖层。 |
+| **游戏配置文件** | 单一硬编码 `AimConfig` | 每个游戏的配置文件（JSON/TOML），包含灵敏度、瞄准范围、类别优先级。通过窗口标题自动检测游戏。 |
+| **多显示器游戏** | 仅捕获 output[0] | 通过 CLI 参数 `--output 1` 手动选择输出，用于副显示器游戏。 |

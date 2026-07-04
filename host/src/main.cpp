@@ -1,15 +1,15 @@
-// ─── Synapse-X Host -- Production main loop ─────────────────
+// ─── Synapse-X 主机端 -- 生产主循环 ─────────────────
 //
-// Fixed 170 Hz pipeline:
-//   DXGI capture (try every tick)
-//     -> new frame?  LZ4 compress + update cache
-//     -> no change?  re-send cached compressed frame
-//   UDP fragment & send (every tick)
-//   UDP reply receive (drain after each send)
+// 固定的 170 Hz 管线：
+//   DXGI 采集（每个 tick 尝试）
+//     -> 新帧？LZ4 压缩 + 更新缓存
+//     -> 无变化？重新发送缓存的压缩帧
+//   UDP 分片与发送（每个 tick）
+//   UDP 回复接收（每次发送后排空）
 //
-// Usage:
-//   SynapseX_Host.exe [target_ip] [port] [roi_w] [roi_h]
-//   Defaults: 192.168.100.2  8888   640     640
+// 用法：
+//   SynapseX_Host.exe [目标IP] [端口] [roi宽] [roi高]
+//   默认值：192.168.100.2  8888   640     640
 
 #include "DxgiCapturer.h"
 #include "Lz4Compressor.h"
@@ -39,9 +39,9 @@ static inline double ToMs(Clock::duration d) {
 }
 
 struct PerfStats {
-    int    captured    = 0;    // new frames from DXGI this window
-    int    sent        = 0;    // total UDP sends this window
-    double sumCapture  = 0.0;  // only measured on new frames
+    int    captured    = 0;    // 本窗口内来自 DXGI 的新帧数
+    int    sent        = 0;    // 本窗口内 UDP 发送总数
+    double sumCapture  = 0.0;  // 仅在新帧上测量
     double sumCompress = 0.0;
     double sumSend     = 0.0;
 
@@ -54,117 +54,117 @@ struct PerfStats {
     }
 };
 
-// ── Intermediate aim-point (unified across all models) ──
+// ── 中间瞄准点（跨所有模型统一）──
 struct AimPoint {
-    float cx, cy;       // screen-space target coordinates
-    int   priority;     // 1 = primary (real head / single-class), 2 = fallback (body-faked head)
-    float distance;     // px from screen center
+    float cx, cy;       // 屏幕空间目标坐标
+    int   priority;     // 1 = 主目标（真实头部/单类），2 = 备选目标（身体模拟头部）
+    float distance;     // 距屏幕中心的像素距离
 };
 
 int main(int argc, char* argv[]) {
-    // ── Parse arguments ──────────────────────────────────
+    // ── 解析参数 ──────────────────────────────────
     const char* targetIp   = (argc > 1) ? argv[1] : "192.168.100.2";
     uint16_t    targetPort = (argc > 2) ? static_cast<uint16_t>(std::atoi(argv[2])) : 8888;
     int         roiW       = (argc > 3) ? std::atoi(argv[3]) : 416;
     int         roiH       = (argc > 4) ? std::atoi(argv[4]) : 416;
 
     if (roiW < 64 || roiH < 64 || roiW > 4096 || roiH > 4096) {
-        fprintf(stderr, "[FATAL] Invalid ROI: %dx%d (min 64, max 4096)\n", roiW, roiH);
+        fprintf(stderr, "[致命错误] 无效的 ROI: %dx%d (最小 64, 最大 4096)\n", roiW, roiH);
         return 1;
     }
 
     int rawSize = roiW * roiH * 4;
 
-    // ── Fixed 170 Hz cadence ──────────────────────────────
+    // ── 固定的 170 Hz 节奏 ──────────────────────────────
     constexpr double kTargetFps  = 170.0;
-    constexpr double kTargetMs   = 1000.0 / kTargetFps;   // ~5.882 ms
+    constexpr double kTargetMs   = 1000.0 / kTargetFps;   // ~5.882 毫秒
     const auto       kInterval   = std::chrono::duration<double, std::milli>(kTargetMs);
 
-    // Boost Windows timer resolution.
-    // Default is 15.6 ms — way too coarse for 5.88 ms ticks.
+    // 提升 Windows 定时器分辨率。
+    // 默认是 15.6 毫秒 -- 对于 5.88 毫秒的 tick 来说太粗糙了。
     timeBeginPeriod(1);
 
-    // Pin main thread to a fixed P-core to prevent OS scheduler
-    // from bouncing it across cores — avoids L1/L2 cache thrashing.
-    DWORD_PTR affinityMask = 1ULL << 2;  // Core 2 (adjust per CPU topology)
+    // 将主线程固定到指定的 P 核，防止 OS 调度器
+    // 将其在不同核心间迁移 -- 避免 L1/L2 缓存抖动。
+    DWORD_PTR affinityMask = 1ULL << 2;  // 核心 2（根据 CPU 拓扑调整）
     if (!SetThreadAffinityMask(GetCurrentThread(), affinityMask)) {
-        fprintf(stderr, "[WARN] SetThreadAffinityMask failed (err=%lu)\n",
+        fprintf(stderr, "[警告] SetThreadAffinityMask 失败 (错误码=%lu)\n",
                 static_cast<unsigned long>(GetLastError()));
     }
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    fprintf(stderr, "[INFO] Thread pinned to core 2, priority TIME_CRITICAL\n");
+    fprintf(stderr, "[信息] 线程已固定到核心 2，优先级为 TIME_CRITICAL\n");
 
     fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  Synapse-X Host -- Fixed %.0f Hz Pipeline\n", kTargetFps);
-    fprintf(stderr, "  Target: %s:%u\n", targetIp, targetPort);
-    fprintf(stderr, "  ROI:    %dx%d  (%.2f MB raw)\n",
+    fprintf(stderr, "  Synapse-X 主机端 -- 固定 %.0f Hz 管线\n", kTargetFps);
+    fprintf(stderr, "  目标: %s:%u\n", targetIp, targetPort);
+    fprintf(stderr, "  ROI:    %dx%d  (%.2f MB 原始数据)\n",
             roiW, roiH, rawSize / (1024.0 * 1024.0));
-    fprintf(stderr, "  Budget: %.2f ms per frame\n", kTargetMs);
+    fprintf(stderr, "  预算: %.2f 毫秒每帧\n", kTargetMs);
     fprintf(stderr, "============================================\n\n");
 
-    // ── Stage 0: Init all modules ────────────────────────
+    // ── 阶段 0：初始化所有模块 ────────────────────────
     SynapseX::DxgiCapturer capturer;
     if (!capturer.Initialize(roiW, roiH)) {
-        fprintf(stderr, "[FATAL] DxgiCapturer init FAILED.\n");
+        fprintf(stderr, "[致命错误] DxgiCapturer 初始化失败。\n");
         return 1;
     }
 
     SynapseX::Lz4Compressor compressor;
     if (!compressor.Initialize(rawSize)) {
-        fprintf(stderr, "[FATAL] Lz4Compressor init FAILED.\n");
+        fprintf(stderr, "[致命错误] Lz4Compressor 初始化失败。\n");
         return 1;
     }
 
     SynapseX::UdpSender sender;
     if (!sender.Initialize(targetIp, targetPort)) {
-        fprintf(stderr, "[FATAL] UdpSender init FAILED.\n");
+        fprintf(stderr, "[致命错误] UdpSender 初始化失败。\n");
         return 1;
     }
 
-    // UDP reply receiver (Client -> Host, port 8889)
+    // UDP 回复接收器（客户端 -> 主机端，端口 8889）
     SynapseX::UdpReplyReceiver replyReceiver;
     if (!replyReceiver.Initialize(8889)) {
-        fprintf(stderr, "[FATAL] UdpReplyReceiver init FAILED.\n");
+        fprintf(stderr, "[致命错误] UdpReplyReceiver 初始化失败。\n");
         return 1;
     }
     replyReceiver.SetRoiParams(roiW, roiH,
                                 capturer.GetOutputWidth(),
                                 capturer.GetOutputHeight());
 
-    // Mouse controller (ddll64.dll for aim-assist)
+    // 鼠标控制器（ddll64.dll 用于辅助瞄准）
     SynapseX::MouseController mouse;
 
     if (!mouse.Load("ddll64.dll")) {
-        fprintf(stderr, "[WARN] MouseController init FAILED — "
-                "aim-assist disabled. Is ddll64.dll next to the exe?\n");
+        fprintf(stderr, "[警告] MouseController 初始化失败 -- "
+                "辅助瞄准已禁用。请检查 ddll64.dll 是否在 exe 旁边？\n");
     }
 
-    // Web tuning panel (runs in background thread)
+    // Web 调参面板（在后台线程中运行）
     SynapseX::HttpTuner tuner;
     if (!tuner.Start(9999)) {
-        fprintf(stderr, "[WARN] HttpTuner init FAILED — web panel unavailable.\n");
+        fprintf(stderr, "[警告] HttpTuner 初始化失败 -- 网页面板不可用。\n");
     }
 
     int screenW = capturer.GetOutputWidth();
     int screenH = capturer.GetOutputHeight();
 
-    fprintf(stderr, "[INFO] All modules initialized. Starting main loop...\n");
-    fprintf(stderr, "[INFO] If game capture fails, try Borderless Windowed mode.\n");
-    fprintf(stderr, "[INFO] Press Ctrl+C to stop.\n\n");
+    fprintf(stderr, "[信息] 所有模块已初始化。开始主循环...\n");
+    fprintf(stderr, "[信息] 如果游戏采集失败，请尝试无边框窗口模式。\n");
+    fprintf(stderr, "[信息] 按 Ctrl+C 停止。\n\n");
 
-    // ── Diagnostic counters ──────────────────────────────
+    // ── 诊断计数器 ──────────────────────────────
     int      zeroFrameCount = 0;
     bool     warnedProtected = false;
     bool     warnedZero = false;
 
-    // ── Main loop state ──────────────────────────────────
+    // ── 主循环状态 ──────────────────────────────────
     std::vector<uint8_t> rawBuffer;
     rawBuffer.reserve(rawSize);
 
     std::vector<uint8_t> compressedBuffer;
     compressedBuffer.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
 
-    // Cached compressed frame — re-sent when desktop is idle.
+    // 缓存的压缩帧 -- 桌面空闲时重新发送。
     std::vector<uint8_t> cachedCompressed;
     cachedCompressed.reserve(SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
     bool hasCachedFrame = false;
@@ -178,54 +178,54 @@ int main(int argc, char* argv[]) {
     const uint16_t roiW16 = static_cast<uint16_t>(roiW);
     const uint16_t roiH16 = static_cast<uint16_t>(roiH);
 
-    // ── Spatial lock state (priority-aware) ────────────────
-    constexpr float kKeepLockRadius = 80.0f;   // px — max dist to maintain lock
-    constexpr int   kMaxLostFrames  = 5;       // frames before giving up
+    // ── 空间锁定状态（优先级感知）────────────────
+    constexpr float kKeepLockRadius = 80.0f;   // 像素 -- 保持锁定的最大距离
+    constexpr int   kMaxLostFrames  = 5;       // 放弃前的最大丢失帧数
 
     bool  isLocked        = false;
     float lockedTargetX   = 0.0f;
     float lockedTargetY   = 0.0f;
     int   lostFrames      = 0;
-    int   lockedPriority  = 0;  // 1=primary, 2=fallback
+    int   lockedPriority  = 0;  // 1=主目标, 2=备选目标
 
     auto nextTick = Clock::now();
 
     // ═══════════════════════════════════════════════════════
-    //  MAIN LOOP — Fixed 170 Hz
+    //  主循环 -- 固定 170 Hz
     // ═══════════════════════════════════════════════════════
     while (g_running) {
-        // ── Hotkeys: PageUp=ON, PageDown=OFF ──────────────
+        // ── 热键：PageUp=开启瞄准, PageDown=关闭瞄准 ──────────────
         static bool pgupWasDown = false, pgdnWasDown = false;
         bool pgupDown = (GetAsyncKeyState(VK_PRIOR) & 0x8000) != 0;
         bool pgdnDown = (GetAsyncKeyState(VK_NEXT)  & 0x8000) != 0;
         if (pgupDown && !pgupWasDown) {
             if (!tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(true);
-                fprintf(stderr, "[Hotkey] Aim ON\n");
+                fprintf(stderr, "[热键] 瞄准开启\n");
             }
         }
         if (pgdnDown && !pgdnWasDown) {
             if (tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(false);
-                fprintf(stderr, "[Hotkey] Aim OFF\n");
+                fprintf(stderr, "[热键] 瞄准关闭\n");
             }
         }
         pgupWasDown = pgupDown;
         pgdnWasDown = pgdnDown;
 
-        // ── Stage 1: Capture (try every tick) ─────────────
+        // ── 阶段 1：采集（每个 tick 尝试）────────────
         auto t0 = Clock::now();
         bool gotFrame = capturer.CaptureFrame(rawBuffer);
         auto t1 = Clock::now();
 
         if (gotFrame) {
-            // ── Diagnostic: detect zero / protected frames ──
+            // ── 诊断：检测全零帧 / 受保护帧 ──
             const auto& fi = capturer.GetLastFrameInfo();
             if (fi.ProtectedContentMaskedOut && !warnedProtected) {
                 fprintf(stderr,
-                    "[DIAG] ProtectedContentMaskedOut detected! "
-                    "Game DRM or anti-cheat is blocking capture.\n"
-                    "[DIAG] Try running the game in Borderless Windowed mode.\n");
+                    "[诊断] 检测到 ProtectedContentMaskedOut！"
+                    "游戏 DRM 或反作弊系统正在阻止采集。\n"
+                    "[诊断] 尝试以无边框窗口模式运行游戏。\n");
                 warnedProtected = true;
             }
 
@@ -237,10 +237,10 @@ int main(int argc, char* argv[]) {
                 zeroFrameCount++;
                 if (!warnedZero && zeroFrameCount > 10) {
                     fprintf(stderr,
-                        "[DIAG] %d consecutive all-zero frames! "
-                        "Screen=(%d,%d) ROI=(%d,%d) Protected=%u\n"
-                        "[DIAG] Game is likely in Exclusive Fullscreen — "
-                        "switch to Borderless Windowed.\n",
+                        "[诊断] 连续 %d 个全零帧！"
+                        "屏幕=(%d,%d) ROI=(%d,%d) 受保护=%u\n"
+                        "[诊断] 游戏可能处于独占全屏模式 -- "
+                        "请切换到无边框窗口模式。\n",
                         zeroFrameCount, screenW, screenH, roiW, roiH,
                         fi.ProtectedContentMaskedOut);
                     warnedZero = true;
@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
                 warnedZero = false;
             }
 
-            // ── Stage 2: Compress (only on new content) ───
+            // ── 阶段 2：压缩（仅在新内容时执行）───
             auto t2a = Clock::now();
             bool ok = compressor.Compress(rawBuffer.data(),
                                            static_cast<int>(rawBuffer.size()),
@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
             auto t2b = Clock::now();
 
             if (ok) {
-                // Update cache for future re-sends
+                // 更新缓存以备后续重新发送
                 cachedCompressed = compressedBuffer;
                 hasCachedFrame   = true;
 
@@ -268,7 +268,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ── Stage 3: Send (ALWAYS — reuses cache if idle) ──
+        // ── 阶段 3：发送（始终执行 -- 空闲时复用缓存）──
         if (hasCachedFrame) {
             auto t3a = Clock::now();
             bool sent = sender.SendCompressedFrame(
@@ -286,7 +286,7 @@ int main(int argc, char* argv[]) {
             frameId++;
         }
 
-        // ── Stage 4: Receive inference replies ─────────────
+        // ── 阶段 4：接收推理回复 ────────────
         {
             std::vector<SynapseX::Detection> detections;
             uint32_t replyFrameId = 0;
@@ -297,17 +297,17 @@ int main(int argc, char* argv[]) {
 
                     static uint8_t lastModelId = 0xFF;
                     if (modelId != lastModelId) {
-                        fprintf(stderr, "[Model] Switched to ID %u\n",
+                        fprintf(stderr, "[模型] 已切换到 ID %u\n",
                                 static_cast<unsigned>(modelId));
                         lastModelId = modelId;
                     }
 
-                    // ── Data Normalizer: all models → unified AimPoint[] ──
+                    // ── 数据归一化：所有模型 → 统一的 AimPoint[] ──
                     float scrCx = static_cast<float>(screenW) * 0.5f;
                     float scrCy = static_cast<float>(screenH) * 0.5f;
 
                     std::vector<AimPoint> aimPoints;
-                    aimPoints.reserve(detections.size() * 2); // Delta may double
+                    aimPoints.reserve(detections.size() * 2); // Delta 可能加倍
 
                     for (const auto& d : detections) {
                         float bw = d.x2 - d.x1;
@@ -320,9 +320,9 @@ int main(int argc, char* argv[]) {
                         ap.cx = bcx;
 
                         switch (modelId) {
-                        case 0: // Apex      — 1-class: classId 0 = enemy
-                        case 3: // OW2       — 1-class: classId 0 = enemy
-                        case 4: // Aimlabs   — 1-class: classId 0 = enemy
+                        case 0: // Apex      -- 1类：classId 0 = 敌人
+                        case 3: // OW2       -- 1类：classId 0 = 敌人
+                        case 4: // Aimlabs   -- 1类：classId 0 = 敌人
                             if (d.classId == 0 && d.confidence >= aimCfg.minConfidence) {
                                 ap.cy       = (aimCfg.aimPoint == 1) ? bcyHead : bcyCenter;
                                 ap.priority = 1;
@@ -331,18 +331,18 @@ int main(int argc, char* argv[]) {
                             }
                             break;
 
-                        case 1: // Delta     — 2-class: 0=body, 1=head
-                        case 5: // PUBG      — 2-class: 0=body, 1=head
+                        case 1: // Delta     -- 2类：0=身体, 1=头部
+                        case 5: // PUBG      -- 2类：0=身体, 1=头部
                             if (aimCfg.aimPoint == 1) {
                                 if (d.classId == 1 && d.confidence >= aimCfg.deltaHeadConfidence) {
                                     ap.cy       = bcyCenter;
                                     ap.priority = 1;
                                 } else if (d.classId == 0 && d.confidence >= aimCfg.minConfidence) {
-                                    ap.cy       = bcyHead;   // body → faked head (filtered)
+                                    ap.cy       = bcyHead;   // 身体 → 模拟头部（已过滤）
                                     ap.priority = 2;
                                 } else { break; }
                             } else {
-                                // Body mode: only body, filtered by confidence
+                                // 身体模式：仅身体，按置信度过滤
                                 if (d.classId != 0 || d.confidence < aimCfg.minConfidence) break;
                                 ap.cy       = bcyCenter;
                                 ap.priority = 1;
@@ -351,7 +351,7 @@ int main(int argc, char* argv[]) {
                             aimPoints.push_back(ap);
                             break;
 
-                        case 2: // BF6       — 2-class: 0=enemy, 1=teammate (DROP)
+                        case 2: // BF6       -- 2类：0=敌人, 1=队友（丢弃）
                             if (d.classId == 0 && d.confidence >= aimCfg.minConfidence) {
                                 ap.cy       = (aimCfg.aimPoint == 1) ? bcyHead : bcyCenter;
                                 ap.priority = 1;
@@ -376,7 +376,7 @@ int main(int argc, char* argv[]) {
                         float bestDist = 1e9f;
 
                         if (isLocked) {
-                            // ── Phase A: Maintain Lock ──────────────
+                            // ── 阶段 A：维持锁定 ──────────────
                             const AimPoint* bestPri1 = nullptr;
                             const AimPoint* bestPri2 = nullptr;
                             float dPri1 = 1e9f, dPri2 = 1e9f;
@@ -411,7 +411,7 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         } else {
-                            // ── Phase B: Acquire Lock ───────────────
+                            // ── 阶段 B：获取锁定 ───────────────
                             const AimPoint* bestPri1 = nullptr;
                             const AimPoint* bestPri2 = nullptr;
                             float dPri1 = 1e9f, dPri2 = 1e9f;
@@ -463,7 +463,7 @@ int main(int argc, char* argv[]) {
                                 static int aimCount = 0;
                                 if (++aimCount % 30 == 1) {
                                     fprintf(stderr,
-                                        "[Aim] tgt=%.0f,%.0f pri=%d dist=%.0f\n",
+                                        "[瞄准] 目标=%.0f,%.0f 优先级=%d 距离=%.0f\n",
                                         static_cast<double>(best->cx),
                                         static_cast<double>(best->cy),
                                         best->priority,
@@ -474,7 +474,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
-        }        // ── Per-second stats report ──────────────────────
+        }        // ── 每秒统计报告 ──────────────────────
         double elapsed = ToMs(Clock::now() - windowStart) / 1000.0;
         if (elapsed >= 1.0) {
             double sendFps    = stats.sent / elapsed;
@@ -486,19 +486,19 @@ int main(int argc, char* argv[]) {
             double pipelineTotal = avgCapture + avgCompress + avgSend;
 
             fprintf(stderr,
-                "---- per-second stats --------------------------------\n"
-                "  Send FPS: %6.1f  |  capture FPS: %6.1f  |  "
-                "fresh: %d  cache: %d  |  total: %lld\n"
-                "  capture: %8.3f ms  |  compress: %8.3f ms  |  "
-                "send: %8.3f ms\n"
-                "  budget: %5.2f ms @%.0f Hz\n",
+                "---- 每秒统计 -------------------------------------\n"
+                "  发送 FPS: %6.1f  |  采集 FPS: %6.1f  |  "
+                "新帧: %d  缓存: %d  |  总计: %lld\n"
+                "  采集: %8.3f 毫秒  |  压缩: %8.3f 毫秒  |  "
+                "发送: %8.3f 毫秒\n"
+                "  预算: %5.2f 毫秒 @%.0f Hz\n",
                 sendFps, captureFps,
                 stats.captured, stats.sent - stats.captured,
                 (long long)totalSent,
                 avgCapture, avgCompress, avgSend,
                 kTargetMs, kTargetFps);
 
-            // Push to web tuning panel
+            // 推送到 Web 调参面板
             tuner.UpdateStats(sendFps, captureFps,
                               pipelineTotal, avgCompress,
                               stats.captured, stats.sent - stats.captured,
@@ -508,13 +508,13 @@ int main(int argc, char* argv[]) {
             windowStart = Clock::now();
         }
 
-        // ── Maintain 170 Hz cadence ──────────────────────
+        // ── 维持 170 Hz 节奏 ──────────────────────
         nextTick += std::chrono::duration_cast<Clock::duration>(kInterval);
         auto now = Clock::now();
         if (nextTick > now) {
             std::this_thread::sleep_until(nextTick);
         } else {
-            // Fell behind schedule — reset to avoid death-spiral
+            // 落后于计划 -- 重置以避免死亡螺旋
             nextTick = now;
         }
     }
@@ -522,7 +522,7 @@ int main(int argc, char* argv[]) {
     timeEndPeriod(1);
 
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
-    fprintf(stderr, "\n[DONE] Session ended. %.1f sec, %lld frames sent, avg %.1f FPS\n",
+    fprintf(stderr, "\n[完成] 会话结束。%.1f 秒, 已发送 %lld 帧, 平均 %.1f FPS\n",
             sessionSec, (long long)totalSent,
             sessionSec > 0.0 ? totalSent / sessionSec : 0.0);
 

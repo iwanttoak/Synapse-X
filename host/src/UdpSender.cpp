@@ -1,11 +1,11 @@
 // ─── UdpSender.cpp ───────────────────────────────────────────
-// Hot path: SendCompressedFrame() — zero heap allocations.
-// Each chunk is assembled on the stack and fired via sendto().
+// 热点路径：SendCompressedFrame() — 零堆分配。
+// 每个数据块在栈上组装并通过 sendto() 发送。
 //
-// Layout of a single UDP datagram:
+// 单个 UDP 数据报的布局：
 //   ┌──────────────┬─────────────────────────────────┐
-//   │ PacketHeader │        payload (LZ4 slice)      │
-//   │   24 bytes    │         ≤ MAX_PAYLOAD_SIZE      │
+//   │ PacketHeader │        负载（LZ4 切片）          │
+//   │   24 字节    │         ≤ MAX_PAYLOAD_SIZE       │
 //   └──────────────┴─────────────────────────────────┘
 
 #include "UdpSender.h"
@@ -20,11 +20,11 @@
 
 namespace SynapseX {
 
-// ── Constants ──────────────────────────────────────────────
-static constexpr int kSendBufSize = 4 * 1024 * 1024;  // 4 MB socket buffer
+// ── 常量 ──────────────────────────────────────────────
+static constexpr int kSendBufSize = 4 * 1024 * 1024;  // 4 MB 套接字缓冲区
 
 // ═══════════════════════════════════════════════════════════════
-//  Lifecycle
+//  生命周期
 // ═══════════════════════════════════════════════════════════════
 
 UdpSender::~UdpSender() {
@@ -34,54 +34,54 @@ UdpSender::~UdpSender() {
 bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     if (m_initialized) Cleanup();
 
-    // ── WinSock startup ──────────────────────────────────
+    // ── WinSock 启动 ──────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "[UdpSender] WSAStartup FAILED: %d\n", WSAGetLastError());
+        fprintf(stderr, "[UdpSender] WSAStartup 失败：%d\n", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
 
-    // ── Create UDP socket ────────────────────────────────
+    // ── 创建 UDP 套接字 ────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        fprintf(stderr, "[UdpSender] socket() FAILED: %d\n", WSAGetLastError());
+        fprintf(stderr, "[UdpSender] socket() 失败：%d\n", WSAGetLastError());
         Cleanup();
         return false;
     }
 
-    // ── Non-blocking mode — prevents sendto() from stalling
-    //    the main loop if the network stack backs up.
+    // ── 非阻塞模式 — 防止 sendto() 在网络堆栈拥塞时
+    //    阻塞主循环。
     u_long nonBlocking = 1;
     ioctlsocket(m_socket, FIONBIO, &nonBlocking);
 
-    // ── Enlarge send buffer to 4 MB ──────────────────────
-    // At 170 Hz with ~50 KB/frame, the buffer can absorb
-    // ~80 frames of burst before blocking.
+    // ── 增大发送缓冲区至 4 MB ──────────────────────
+    // 在 170 Hz 下，每帧约 50 KB，缓冲区可以在阻塞前
+    // 吸收约 80 帧的突发数据。
     int bufSize = kSendBufSize;
     setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF,
                reinterpret_cast<const char*>(&bufSize), sizeof(bufSize));
 
-    // ── Resolve target address ───────────────────────────
+    // ── 解析目标地址 ───────────────────────────
     std::memset(&m_targetAddr, 0, sizeof(m_targetAddr));
     m_targetAddr.sin_family = AF_INET;
     m_targetAddr.sin_port   = htons(port);
 
     if (inet_pton(AF_INET, targetIp.c_str(), &m_targetAddr.sin_addr) != 1) {
-        fprintf(stderr, "[UdpSender] inet_pton FAILED for '%s': %d\n",
+        fprintf(stderr, "[UdpSender] inet_pton 失败，目标 '%s'：%d\n",
                 targetIp.c_str(), WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    fprintf(stderr, "[UdpSender] Ready -- target %s:%u, send buffer %d KB, non-blocking\n",
+    fprintf(stderr, "[UdpSender] 就绪 -- 目标 %s:%u, 发送缓冲区 %d KB, 非阻塞\n",
             targetIp.c_str(), port, kSendBufSize / 1024);
     return true;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Send (hot path)
+//  发送（热点路径）
 // ═══════════════════════════════════════════════════════════════
 
 bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
@@ -93,16 +93,16 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
     if (!m_initialized) return false;
     if (totalSize == 0)   return false;
 
-    // ── Calculate chunk count ────────────────────────────
+    // ── 计算块数 ────────────────────────────
     const uint16_t totalChunks = static_cast<uint16_t>(
         (totalSize + MAX_PAYLOAD_SIZE - 1) / MAX_PAYLOAD_SIZE);
 
-    // ── Stack-allocated packet buffer ────────────────────
-    //    Zero heap allocation in the send loop.
+    // ── 栈分配的数据包缓冲区 ────────────────────
+    //    发送循环中零堆分配。
     constexpr size_t kPacketBufSize = sizeof(PacketHeader) + MAX_PAYLOAD_SIZE;
     uint8_t packetBuf[kPacketBufSize];
 
-    // Pre-fill the header fields that stay constant per frame.
+    // 预填充每帧不变的头部字段。
     auto* header = reinterpret_cast<PacketHeader*>(packetBuf);
     header->magic       = PROTOCOL_MAGIC;
     header->frameId     = frameId;
@@ -116,18 +116,18 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
     uint32_t remaining = totalSize;
 
     for (uint16_t i = 0; i < totalChunks; ++i) {
-        // Per-chunk header fields
+        // 每个块的头部字段
         header->chunkIndex  = i;
         header->payloadSize = (remaining > MAX_PAYLOAD_SIZE)
                               ? MAX_PAYLOAD_SIZE
                               : static_cast<uint16_t>(remaining);
 
-        // Copy payload into packet buffer (right after the header)
+        // 将负载复制到数据包缓冲区（头部之后）
         std::memcpy(packetBuf + sizeof(PacketHeader),
                     src,
                     header->payloadSize);
 
-        // Fire
+        // 发送
         int totalPacketSize = static_cast<int>(sizeof(PacketHeader) + header->payloadSize);
         int sent = sendto(m_socket,
                           reinterpret_cast<const char*>(packetBuf),
@@ -139,18 +139,18 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
         if (sent == SOCKET_ERROR) {
             int err = WSAGetLastError();
             if (err == WSAEWOULDBLOCK) {
-                // Non-blocking send buffer full — drop this chunk.
-                // Client reassembles out-of-order; one missing chunk
-                // means the frame is lost, but the pipeline continues.
-                // A single dropped frame at 170 Hz is invisible.
+                // 非阻塞发送缓冲区已满 — 丢弃此块。
+                // 客户端会重新组装乱序数据；丢失一个块
+                // 意味着该帧丢失，但管线继续运行。
+                // 在 170 Hz 下，单帧丢失不可见。
                 static int dropCount = 0;
                 if (++dropCount % 100 == 1) {
-                    fprintf(stderr, "[UdpSender] packet dropped (send buf full, "
-                            "%d total drops)\n", dropCount);
+                    fprintf(stderr, "[UdpSender] 数据包已丢弃（发送缓冲区满，"
+                            "共 %d 次丢弃）\n", dropCount);
                 }
                 return false;
             }
-            fprintf(stderr, "[UdpSender] sendto FAILED chunk %u/%u: err=%d\n",
+            fprintf(stderr, "[UdpSender] sendto 失败，块 %u/%u：错误码=%d\n",
                     i + 1, totalChunks, err);
             return false;
         }
@@ -163,7 +163,7 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Cleanup
+//  清理
 // ═══════════════════════════════════════════════════════════════
 
 void UdpSender::Cleanup() {

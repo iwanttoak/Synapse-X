@@ -1,32 +1,32 @@
 #pragma once
 
 // ─── CudaPreprocess ───────────────────────────────────────────
-// GPU-side BGRA8 → FP32 CHW RGB preprocessing via NVRTC.
+// GPU端 BGRA8 → FP32 CHW RGB 预处理，通过 NVRTC 实现。
 //
-// Uses NVRTC (NVIDIA Runtime Compilation) to compile the CUDA
-// kernel at init time — no nvcc required at build time.
+// 使用 NVRTC（NVIDIA 运行时编译）在初始化时编译 CUDA 内核
+// — 构建时无需 nvcc。
 //
 // InitCudaPreprocess():
-//   Compiles the kernel, loads PTX, caches CUfunction handle.
-//   Must be called once, after cudaSetDevice(), from any thread.
+//   编译内核，加载 PTX，缓存 CUfunction 句柄。
+//   必须在 cudaSetDevice() 之后调用一次，可从任何线程调用。
 //
 // LaunchBgra8ToFp32ChwRgb():
-//   Queues the kernel on the given CUDA stream.
-//   Thread-safe as long as the stream is not shared across threads.
+//   将内核排队到给定的 CUDA 流上。
+//   只要流不在线程间共享，就是线程安全的。
 
 #include <cstdint>
 #include <cuda_runtime.h>
 
 namespace SynapseX {
 
-// One-time init. Returns true on success.
+// 一次性初始化。成功返回 true。
 bool InitCudaPreprocess();
 
-// Launch the BGRA→FP32 CHW RGB kernel on the given CUDA stream.
-//   d_bgra:    GPU pointer to uint8 BGRA, size = width × height × 4
-//   d_rgb_chw: GPU pointer to float RGB CHW, size = 3 × width × height
-//   width, height: image dimensions (e.g. 416, 416)
-//   stream:    CUDA stream to queue the kernel on
+// 在给定的 CUDA 流上启动 BGRA→FP32 CHW RGB 内核。
+//   d_bgra:    GPU 指针，指向 uint8 BGRA，大小 = width × height × 4
+//   d_rgb_chw: GPU 指针，指向 float RGB CHW，大小 = 3 × width × height
+//   width, height: 图像尺寸（例如 416, 416）
+//   stream:    用于排队内核的 CUDA 流
 void LaunchBgra8ToFp32ChwRgb(
     const uint8_t* d_bgra,
     float*         d_rgb_chw,
