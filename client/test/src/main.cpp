@@ -11,6 +11,7 @@
 #include "../include/ImageUtils.h"
 #include "../../include/TrtInference.h"
 #include "../../include/CudaPreprocess.h"
+#include "../../../shared/include/Log.h"
 #include "../../../shared/include/ReplyPacket.h"
 
 #include <windows.h>
@@ -45,14 +46,15 @@ static bool SaveBgraBmp(const char* path, const uint8_t* px, int w, int h) {
 }
 
 int main(int argc, char* argv[]) {
+    SynapseX::Log::Initialize("client_test", spdlog::level::debug, false);
     if (argc < 3) {
-        fprintf(stderr, "Usage: test_infer.exe <engine> <image>\n");
-        fprintf(stderr, "  e.g. test_infer.exe ../model/engine/delta_body_head_416.engine ../image/delta.jpg\n");
+        SX_LOG_ERROR("Usage: test_infer.exe <engine> <image>");
+        SX_LOG_ERROR("Example: test_infer.exe ../model/engine/delta_body_head_416.engine ../image/delta.jpg");
         return 1;
     }
     std::string enginePath(argv[1]);
     std::string imagePath(argv[2]);
-    fprintf(stderr, "Engine: %s\nImage:  %s\n\n", enginePath.c_str(), imagePath.c_str());
+    SX_LOG_INFO("Engine: {} Image: {}", enginePath, imagePath);
 
     // ── 1. Load & resize image → 416×416 BGRA ────────────
     int wcharLen = MultiByteToWideChar(CP_UTF8, 0, imagePath.c_str(), -1, nullptr, 0);
@@ -61,41 +63,41 @@ int main(int argc, char* argv[]) {
 
     std::vector<uint8_t> bgra;
     if (!TestUtils::LoadAndResize(wpath.data(), 416, 416, bgra)) {
-        fprintf(stderr, "FATAL: Cannot load image: %s\n", imagePath.c_str());
+        SX_LOG_CRITICAL("Cannot load image: {}", imagePath);
         return 1;
     }
-    fprintf(stderr, "Image loaded: %zu bytes (416x416 BGRA)\n", bgra.size());
+    SX_LOG_INFO("Image loaded: {} bytes (416x416 BGRA)", bgra.size());
 
     // ── 2. GPU init ──────────────────────────────────────
     cudaSetDevice(0);
     SynapseX::TrtInference trt;
     if (!trt.Initialize()) {
-        fprintf(stderr, "FATAL: TRT init failed\n");
+        SX_LOG_CRITICAL("TRT init failed");
         return 1;
     }
     if (!trt.LoadEngineByPath(enginePath)) {
-        fprintf(stderr, "FATAL: Engine load failed\n");
+        SX_LOG_CRITICAL("Engine load failed");
         return 1;
     }
     if (!trt.SetupStream()) {
-        fprintf(stderr, "FATAL: Stream setup failed\n");
+        SX_LOG_CRITICAL("Stream setup failed");
         return 1;
     }
 
     // Init GPU preprocess (NVRTC — required before Infer!)
     if (!SynapseX::InitCudaPreprocess()) {
-        fprintf(stderr, "FATAL: InitCudaPreprocess failed\n");
+        SX_LOG_CRITICAL("InitCudaPreprocess failed");
         return 1;
     }
 
     // Warmup
-    fprintf(stderr, "Warming up (10 dummy frames)...\n");
+    SX_LOG_INFO("Warming up with 10 dummy frames");
     std::vector<uint8_t> black(416 * 416 * 4, 0);
     for (int i = 0; i < 10; ++i) trt.Infer(black.data(), 0.9f);
     cudaDeviceSynchronize();
 
     // ── 3. Inference ─────────────────────────────────────
-    fprintf(stderr, "Running inference...\n");
+    SX_LOG_INFO("Running inference");
     auto dets = trt.Infer(bgra.data(), 0.25f);
 
     // ── 4. Output ────────────────────────────────────────
@@ -111,7 +113,7 @@ int main(int argc, char* argv[]) {
     size_t pos = gameName.find("_416");
     if (pos != std::string::npos) gameName = gameName.substr(0, pos);
 
-    fprintf(stderr, "Game: %s, Detections: %zu\n\n", gameName.c_str(), dets.size());
+    SX_LOG_INFO("Game: {} Detections: {}", gameName, dets.size());
 
     // Class names per model
     const char** classNames = nullptr;
@@ -133,9 +135,9 @@ int main(int argc, char* argv[]) {
             cn = classNames[dets[i].classId % (gameName.find("delta") != std::string::npos ? 2 :
                                                 gameName.find("bf6") != std::string::npos ? 2 : 1)];
         }
-        fprintf(stderr, "  [%s] conf=%.3f  box=[%.1f, %.1f, %.1f, %.1f]\n",
-                cn, dets[i].confidence,
-                dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
+        SX_LOG_DEBUG("Detection [{}] conf={:.3f} box=[{:.1f}, {:.1f}, {:.1f}, {:.1f}]",
+                     cn, dets[i].confidence,
+                     dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
     }
 
     // Save detection text
@@ -157,7 +159,7 @@ int main(int argc, char* argv[]) {
                     dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
         }
         fclose(tf);
-        fprintf(stderr, "\nSaved: %s\n", txtPath);
+        SX_LOG_INFO("Saved detection text: {}", txtPath);
     }
 
     // Draw boxes & save BMP (convert Detection to raw arrays)
@@ -175,10 +177,10 @@ int main(int argc, char* argv[]) {
     char bmpPath[512];
     snprintf(bmpPath, sizeof(bmpPath), "./result/%s_boxes.bmp", gameName.c_str());
     if (SaveBgraBmp(bmpPath, bgra.data(), 416, 416)) {
-        fprintf(stderr, "Saved: %s\n", bmpPath);
+        SX_LOG_INFO("Saved annotated image: {}", bmpPath);
     }
 
     trt.Cleanup();
-    fprintf(stderr, "\nDone.\n");
+    SX_LOG_INFO("Done");
     return 0;
 }

@@ -4,6 +4,7 @@
 // 热点路径：AimAtTarget() 在 170 Hz 下运行。零堆分配。
 
 #include "MouseController.h"
+#include "Log.h"
 
 #include <cstdio>
 
@@ -22,8 +23,8 @@ bool MouseController::Load(const char* dllPath) {
 
     m_dll = LoadLibraryA(dllPath);
     if (!m_dll) {
-        fprintf(stderr, "[MouseCtrl] LoadLibraryA('%s') 失败 (错误码=%lu)\n",
-                dllPath, static_cast<unsigned long>(GetLastError()));
+        SX_LOG_ERROR("[MouseCtrl] LoadLibraryA('{}') failed (error={})",
+                     dllPath, static_cast<unsigned long>(GetLastError()));
         return false;
     }
 
@@ -31,22 +32,22 @@ bool MouseController::Load(const char* dllPath) {
     auto openDev = reinterpret_cast<OpenDeviceFn>(
         GetProcAddress(m_dll, "OpenDevice"));
     if (!openDev || openDev() == 0) {
-        fprintf(stderr, "[MouseCtrl] OpenDevice 失败。请以管理员身份运行。\n");
+        SX_LOG_ERROR("[MouseCtrl] OpenDevice failed. Try running as administrator.");
         FreeLibrary(m_dll); m_dll = nullptr;
         return false;
     }
 
     m_moveR = reinterpret_cast<MoveRFn>(GetProcAddress(m_dll, "MoveR"));
     if (!m_moveR) {
-        fprintf(stderr, "[MouseCtrl] GetProcAddress('MoveR') 失败\n");
+        SX_LOG_ERROR("[MouseCtrl] GetProcAddress('MoveR') failed");
         FreeLibrary(m_dll); m_dll = nullptr;
         return false;
     }
 
     m_loaded = true;
     ResetPDState();
-    fprintf(stderr, "[MouseCtrl] 就绪 -- PD + 亚像素 + 延时补偿 (Kp=%.2f Kd=%.2f)\n",
-            static_cast<double>(m_cfg.Kp), static_cast<double>(m_cfg.Kd));
+    SX_LOG_INFO("[MouseCtrl] Ready: PD + subpixel + delay compensation (Kp={:.2f}, Kd={:.2f})",
+                static_cast<double>(m_cfg.Kp), static_cast<double>(m_cfg.Kd));
     return true;
 }
 

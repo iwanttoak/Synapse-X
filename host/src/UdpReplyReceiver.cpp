@@ -4,6 +4,7 @@
 // 坐标映射到屏幕坐标（使用主机端的 ROI 偏移量）。
 
 #include "UdpReplyReceiver.h"
+#include "Log.h"
 #include "ReplyPacket.h"
 
 #include <cstdio>
@@ -26,14 +27,14 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "[ReplyRecv] WSAStartup 失败：%d\n", WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] WSAStartup failed: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
 
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        fprintf(stderr, "[ReplyRecv] socket() 失败：%d\n", WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] socket() failed: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -53,14 +54,13 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     if (bind(m_socket, reinterpret_cast<const sockaddr*>(&localAddr),
              sizeof(localAddr)) == SOCKET_ERROR) {
-        fprintf(stderr, "[ReplyRecv] bind(:%u) 失败：%d\n",
-                port, WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] bind(:{}) failed: {}", port, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    fprintf(stderr, "[ReplyRecv] 就绪 -- 监听在 0.0.0.0:%u\n", port);
+    SX_LOG_INFO("[ReplyRecv] Ready: listening on 0.0.0.0:{}", port);
     return true;
 }
 
@@ -117,7 +117,7 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
         if (bytes == SOCKET_ERROR) {
             int err = WSAGetLastError();
             if (err == WSAEWOULDBLOCK) break;  // 没有更多数据
-            fprintf(stderr, "[ReplyRecv] recvfrom 错误：%d\n", err);
+            SX_LOG_ERROR("[ReplyRecv] recvfrom failed: {}", err);
             break;
         }
 
@@ -129,16 +129,16 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
 
         uint16_t numDets = header->numDets;
         if (numDets > MAX_DETS_PER_REPLY) {
-            fprintf(stderr, "[ReplyRecv] numDets=%u 超过最大值 %u — 已钳制\n",
-                    numDets, MAX_DETS_PER_REPLY);
+            SX_LOG_WARN("[ReplyRecv] numDets={} exceeds max {}, clamping",
+                        numDets, MAX_DETS_PER_REPLY);
             numDets = MAX_DETS_PER_REPLY;
         }
 
         int expectedLen = static_cast<int>(
             sizeof(ReplyHeader) + numDets * sizeof(DetectionRaw));
         if (bytes < expectedLen) {
-            fprintf(stderr, "[ReplyRecv] 回复被截断：收到 %d，预期 %d\n",
-                    bytes, expectedLen);
+            SX_LOG_WARN("[ReplyRecv] Truncated reply: received={} expected={}",
+                        bytes, expectedLen);
             continue;
         }
 

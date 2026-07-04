@@ -8,6 +8,7 @@
 //   .\build_x64\RelWithDebInfo\SynapseX_Host_TestBmp.exe
 
 #include "DxgiCapturer.h"
+#include "Log.h"
 #include "Lz4Compressor.h"
 
 #include <windows.h>
@@ -61,7 +62,7 @@ bool SaveBgraAsBmp(const char* path,
 
     FILE* f = fopen(path, "wb");
     if (!f) {
-        fprintf(stderr, "[BMP] 无法打开文件: %s\n", path);
+        SX_LOG_ERROR("[HostTest] Failed to open BMP output file: {}", path);
         return false;
     }
 
@@ -90,9 +91,8 @@ bool SaveBgraAsBmp(const char* path,
 // ═══════════════════════════════════════════════════════════════
 
 int main() {
-    fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  Synapse-X: DXGI ROI 截屏测试\n");
-    fprintf(stderr, "============================================\n\n");
+    SynapseX::Log::Initialize("host_test", spdlog::level::debug, false);
+    SX_LOG_INFO("[HostTest] DXGI ROI capture test started");
 
     // ── 1. 初始化 ────────────────────────────────────
     SynapseX::DxgiCapturer capturer;
@@ -100,24 +100,21 @@ int main() {
     constexpr int ROI_H = 640;
 
     if (!capturer.Initialize(ROI_W, ROI_H)) {
-        fprintf(stderr, "[致命错误] DXGI 截屏器初始化失败。\n");
-        fprintf(stderr, "  可能原因：无显示器、显卡驱动不支持、\n");
-        fprintf(stderr, "  或此输出设备不支持桌面复制。\n");
+        SX_LOG_CRITICAL("[HostTest] DxgiCapturer initialization failed. Possible causes: no display attached, unsupported driver, or desktop duplication unavailable");
         return 1;
     }
 
-    fprintf(stderr, "[信息] 显示器分辨率: %dx%d\n",
-            capturer.GetOutputWidth(), capturer.GetOutputHeight());
-    fprintf(stderr, "[信息] ROI: %dx%d（中心裁切）\n", ROI_W, ROI_H);
+    SX_LOG_INFO("[HostTest] Display resolution={}x{} ROI={}x{}",
+                capturer.GetOutputWidth(), capturer.GetOutputHeight(),
+                ROI_W, ROI_H);
 
     // 计算预期的源区域用于诊断
     LONG srcLeft = (capturer.GetOutputWidth()  - ROI_W) / 2;
     LONG srcTop  = (capturer.GetOutputHeight() - ROI_H) / 2;
-    fprintf(stderr, "[信息] 源区域: left=%ld top=%ld right=%ld bottom=%ld\n",
-            srcLeft, srcTop, srcLeft + ROI_W, srcTop + ROI_H);
+    SX_LOG_INFO("[HostTest] Source rect: left={} top={} right={} bottom={}",
+                srcLeft, srcTop, srcLeft + ROI_W, srcTop + ROI_H);
 
-    fprintf(stderr, "[信息] 等待新帧...\n");
-    fprintf(stderr, "       （移动窗口或晃动鼠标以触发画面更新）\n\n");
+    SX_LOG_INFO("[HostTest] Waiting for a new frame; move a window or the mouse to trigger desktop updates");
 
     // ── 2. 采集循环（等待真实帧）──────────────────────
     std::vector<uint8_t> buffer;
@@ -133,23 +130,21 @@ int main() {
             }
 
             const auto& info = capturer.GetLastFrameInfo();
-            fprintf(stderr, "[尝试 %3d] 获取到帧: %zu 字节 | "
-                    "LastPresentTime=%lld AccumulatedFrames=%u RectCount=%u "
-                    "PtrPos=(%d,%d) Visible=%d Protected=%u AllZero=%s\n",
-                    attempt,
-                    buffer.size(),
-                    static_cast<long long>(info.LastPresentTime.QuadPart),
-                    info.AccumulatedFrames,
-                    info.TotalMetadataBufferSize,
-                    static_cast<int>(info.PointerPosition.Position.x),
-                    static_cast<int>(info.PointerPosition.Position.y),
-                    info.PointerPosition.Visible,
-                    info.ProtectedContentMaskedOut,
-                    allZero ? "是" : "否");
+            SX_LOG_DEBUG("[HostTest] Attempt={} bytes={} last_present_time={} accumulated_frames={} metadata_bytes={} pointer=({}, {}) visible={} protected={} all_zero={}",
+                         attempt,
+                         buffer.size(),
+                         static_cast<long long>(info.LastPresentTime.QuadPart),
+                         info.AccumulatedFrames,
+                         info.TotalMetadataBufferSize,
+                         static_cast<int>(info.PointerPosition.Position.x),
+                         static_cast<int>(info.PointerPosition.Position.y),
+                         info.PointerPosition.Visible,
+                         info.ProtectedContentMaskedOut,
+                         allZero);
 
             if (!allZero) {
                 captured = true;
-                fprintf(stderr, "[成功] 第 %d 次尝试捕获到非零帧！\n", attempt);
+                SX_LOG_INFO("[HostTest] Captured a non-zero frame on attempt {}", attempt);
                 break;
             }
         }
@@ -157,60 +152,50 @@ int main() {
     }
 
     if (!captured) {
-        fprintf(stderr, "\n[错误] 全部 %d 帧均为黑色（全零像素）。\n",
-                kMaxAttempts);
-        fprintf(stderr, "排查建议：\n");
-        fprintf(stderr, "  1. 是否在远程桌面/虚拟显示器上运行？\n");
-        fprintf(stderr, "  2. 显示器是否已开机并连接到此 GPU？\n");
-        fprintf(stderr, "  3. 尝试在物理桌面上以控制台应用运行。\n");
-        fprintf(stderr, "  4. 检查上述日志中 ProtectedContentMaskedOut 是否被设置。\n");
+        SX_LOG_ERROR("[HostTest] All {} capture attempts returned black frames. Check remote desktop, virtual displays, physical monitor/GPU connection, and ProtectedContentMaskedOut diagnostics",
+                     kMaxAttempts);
         return 1;
     }
 
     // ── 3. 保存 BMP ────────────────────────────────────
     const char* outPath = "test_roi.bmp";
     if (!SaveBgraAsBmp(outPath, buffer.data(), ROI_W, ROI_H)) {
-        fprintf(stderr, "[致命错误] BMP 写入失败。\n");
+        SX_LOG_CRITICAL("[HostTest] Failed to write BMP output");
         return 1;
     }
 
-    fprintf(stderr, "[成功] BMP 已保存: %s (%dx%d, 32-bit BGRA, %zu 字节)\n",
-            outPath, ROI_W, ROI_H, buffer.size());
+    SX_LOG_INFO("[HostTest] Saved BMP: path={} size={}x{} bytes={}",
+                outPath, ROI_W, ROI_H, buffer.size());
 
     // 显示前几个像素供人工验证
     if (buffer.size() >= 16) {
         const uint8_t* p = buffer.data();
-        fprintf(stderr, "[信息] 前 4 个像素 (B,G,R,A): "
-                "[%3u,%3u,%3u,%3u] [%3u,%3u,%3u,%3u] "
-                "[%3u,%3u,%3u,%3u] [%3u,%3u,%3u,%3u]\n",
-                p[0],p[1],p[2],p[3],   p[4],p[5],p[6],p[7],
-                p[8],p[9],p[10],p[11], p[12],p[13],p[14],p[15]);
+        SX_LOG_DEBUG("[HostTest] First 4 pixels BGRA: [{},{},{},{}] [{},{},{},{}] [{},{},{},{}] [{},{},{},{}]",
+                     p[0],p[1],p[2],p[3], p[4],p[5],p[6],p[7],
+                     p[8],p[9],p[10],p[11], p[12],p[13],p[14],p[15]);
     }
 
     // ── 4. LZ4 压缩测试 ────────────────────────────────
-    fprintf(stderr, "\n============================================\n");
-    fprintf(stderr, "  LZ4 压缩测试\n");
-    fprintf(stderr, "============================================\n");
+    SX_LOG_INFO("[HostTest] Starting LZ4 compression test");
 
     const int rawSize = static_cast<int>(buffer.size());
 
     // 初始化压缩器（预分配内部缓冲区）
     SynapseX::Lz4Compressor compressor;
     if (!compressor.Initialize(rawSize)) {
-        fprintf(stderr, "[致命错误] LZ4 压缩器初始化失败。\n");
+        SX_LOG_CRITICAL("[HostTest] LZ4 compressor initialization failed");
         return 1;
     }
-    fprintf(stderr, "[信息] 压缩器已初始化，最大输入: %d 字节\n",
-            compressor.GetMaxInputSize());
-    fprintf(stderr, "[信息] 最坏情况压缩缓冲区: %d 字节 (LZ4_compressBound)\n\n",
-            SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
+    SX_LOG_INFO("[HostTest] LZ4 compressor ready: max_input={} max_output={}",
+                compressor.GetMaxInputSize(),
+                SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
 
     // 压缩并计时
     std::vector<uint8_t> compressed;
     auto t0 = std::chrono::high_resolution_clock::now();
 
     if (!compressor.Compress(buffer.data(), rawSize, compressed)) {
-        fprintf(stderr, "[致命错误] LZ4 压缩失败。\n");
+        SX_LOG_CRITICAL("[HostTest] LZ4 compression failed");
         return 1;
     }
 
@@ -226,15 +211,8 @@ int main() {
         ? (rawSize / (1024.0 * 1024.0)) / (compressMs / 1000.0)
         : 0.0;
 
-    fprintf(stderr, "[LZ4] 压缩结果:\n");
-    fprintf(stderr, "  原始大小:     %10d 字节  (%.2f MB)\n",
-            rawSize, rawSize / (1024.0 * 1024.0));
-    fprintf(stderr, "  压缩后:       %10d 字节  (%.2f MB)\n",
-            compressedSize, compressedSize / (1024.0 * 1024.0));
-    fprintf(stderr, "  压缩比:       %10.1f %%  (占原始)\n", ratio);
-    fprintf(stderr, "  耗时:         %10.3f 毫秒\n", compressMs);
-    fprintf(stderr, "  吞吐量:       %10.1f MB/s\n", throughputMBps);
-
-    fprintf(stderr, "\n[完成] 所有测试通过。\n");
+    SX_LOG_INFO("[HostTest] LZ4 result: raw_bytes={} compressed_bytes={} ratio={:.1f}% compress_ms={:.3f} throughput_mb_s={:.1f}",
+                rawSize, compressedSize, ratio, compressMs, throughputMBps);
+    SX_LOG_INFO("[HostTest] All tests passed");
     return 0;
 }

@@ -13,6 +13,7 @@
 
 #include "TrtInference.h"
 #include "CudaPreprocess.h"
+#include "Log.h"
 #include "PacketHeader.h"  // g_targetModelId extern
 
 #include <cuda_runtime.h>
@@ -41,8 +42,13 @@ public:
         return logger;
     }
     void log(Severity severity, const char* msg) noexcept override {
-        if (severity <= Severity::kWARNING)
-            fprintf(stderr, "[TRT] %s\n", msg);
+        if (severity == Severity::kINTERNAL_ERROR || severity == Severity::kERROR) {
+            SX_LOG_ERROR("[TRT] {}", msg);
+        } else if (severity == Severity::kWARNING) {
+            SX_LOG_WARN("[TRT] {}", msg);
+        } else {
+            SX_LOG_DEBUG("[TRT] {}", msg);
+        }
     }
 private:
     TrtLogger() = default;
@@ -55,15 +61,15 @@ private:
 static std::vector<char> LoadFile(const std::string& path) {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) {
-        fprintf(stderr, "[TrtInference] Cannot open: %s\n", path.c_str());
+        SX_LOG_ERROR("[TrtInference] Cannot open engine file: {}", path);
         return {};
     }
     size_t size = f.tellg();
     f.seekg(0);
     std::vector<char> data(size);
     f.read(data.data(), size);
-    fprintf(stderr, "[TrtInference] Loaded engine: %s (%.1f MB)\n",
-            path.c_str(), size / 1048576.0);
+    SX_LOG_DEBUG("[TrtInference] Loaded engine file: path={} size_mb={:.1f}",
+                 path, size / 1048576.0);
     return data;
 }
 
@@ -87,7 +93,7 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
         case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs，1类：敌人
         case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG，2类：身体，头部
         default:
-            fprintf(stderr, "[TrtInference] Unknown modelId=%u (valid: 0-5)\n", modelId);
+            SX_LOG_ERROR("[TrtInference] Unknown modelId={} (valid range: 0..5)", modelId);
             return "";
     }
 }
@@ -105,12 +111,12 @@ bool TrtInference::Initialize() {
 
     auto* runtime = nvinfer1::createInferRuntime(TrtLogger::Instance());
     if (!runtime) {
-        fprintf(stderr, "[TrtInference] createInferRuntime FAILED\n");
+        SX_LOG_ERROR("[TrtInference] createInferRuntime failed");
         return false;
     }
     m_runtime = runtime;
     m_initialized = true;
-    fprintf(stderr, "[TrtInference] Runtime ready. Waiting for engine load...\n");
+    SX_LOG_INFO("[TrtInference] Runtime ready; waiting for engine load");
     return true;
 }
 
@@ -151,8 +157,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     auto* engine = static_cast<nvinfer1::IRuntime*>(m_runtime)
         ->deserializeCudaEngine(engineData.data(), engineData.size());
     if (!engine) {
-        fprintf(stderr, "[TrtInference] deserializeCudaEngine FAILED for %s\n",
-                path.c_str());
+        SX_LOG_ERROR("[TrtInference] deserializeCudaEngine failed for {}", path);
         return false;
     }
     m_engine = engine;
@@ -160,7 +165,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     // ── 3. 创建执行上下文 ───────────────────────────────────
     auto* ctx = engine->createExecutionContext();
     if (!ctx) {
-        fprintf(stderr, "[TrtInference] createExecutionContext FAILED\n");
+        SX_LOG_ERROR("[TrtInference] createExecutionContext failed");
         return false;
     }
     m_context = ctx;
@@ -180,8 +185,8 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
         void* devPtr = nullptr;
         cudaError_t err = cudaMalloc(&devPtr, bytes);
         if (err != cudaSuccess) {
-            fprintf(stderr, "[TrtInference] cudaMalloc FAILED for '%s': %s\n",
-                    name, cudaGetErrorString(err));
+            SX_LOG_ERROR("[TrtInference] cudaMalloc failed for tensor '{}': {}",
+                         name, cudaGetErrorString(err));
             UnloadEngine();
             return false;
         }
@@ -200,14 +205,14 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     size_t bgraBytes = static_cast<size_t>(m_modelW) * m_modelH * 4;
     cudaError_t cudaErr = cudaMalloc(&m_dBgraInput, bgraBytes);
     if (cudaErr != cudaSuccess) {
-        fprintf(stderr, "[TrtInference] cudaMalloc(BGRA) FAILED: %s\n",
-                cudaGetErrorString(cudaErr));
+        SX_LOG_ERROR("[TrtInference] cudaMalloc for BGRA input failed: {}",
+                     cudaGetErrorString(cudaErr));
         UnloadEngine();
         return false;
     }
 
-    fprintf(stderr, "[TrtInference] Engine loaded: %s | %dx%d, output: %zu B\n",
-            path.c_str(), m_modelW, m_modelH, m_outputBytes);
+    SX_LOG_INFO("[TrtInference] Engine loaded: path={} input={}x{} output_bytes={}",
+                path, m_modelW, m_modelH, m_outputBytes);
     return true;
 }
 
@@ -225,7 +230,7 @@ bool TrtInference::LoadEngine(uint8_t modelId) {
     UnloadEngine();
 
     if (!LoadEngineFile(path)) {
-        fprintf(stderr, "[TrtInference] LoadEngine(%u) FAILED\n", modelId);
+        SX_LOG_ERROR("[TrtInference] LoadEngine({}) failed", modelId);
         return false;
     }
 
@@ -257,11 +262,11 @@ bool TrtInference::SetupStream() {
         reinterpret_cast<cudaStream_t*>(&m_stream),
         cudaStreamNonBlocking);
     if (err != cudaSuccess) {
-        fprintf(stderr, "[TrtInference] cudaStreamCreate FAILED: %s\n",
-                cudaGetErrorString(err));
+        SX_LOG_ERROR("[TrtInference] cudaStreamCreateWithFlags failed: {}",
+                     cudaGetErrorString(err));
         return false;
     }
-    fprintf(stderr, "[TrtInference] CUDA stream created (non-blocking).\n");
+    SX_LOG_INFO("[TrtInference] CUDA stream created (non-blocking)");
     return true;
 }
 
@@ -282,8 +287,8 @@ std::vector<Detection> TrtInference::Infer(
     // ═══════════════════════════════════════════════════════════
     uint8_t targetId = g_targetModelId.load(std::memory_order_relaxed);
     if (m_currentModelId != targetId) {
-        fprintf(stderr, "[TrtInference] Model switch: %u → %u\n",
-                m_currentModelId, targetId);
+        SX_LOG_INFO("[TrtInference] Model switch requested: {} -> {}",
+                    m_currentModelId, targetId);
 
         // 1. 同步流 — 确保前一帧的GPU工作已完成
         if (stream) cudaStreamSynchronize(stream);
@@ -294,16 +299,15 @@ std::vector<Detection> TrtInference::Infer(
         // 3. 加载新引擎
         std::string path = GetModelPath(targetId);
         if (path.empty() || !LoadEngineFile(path)) {
-            fprintf(stderr, "[TrtInference] Hot-swap FAILED for modelId=%u. "
-                    "Inference disabled until valid modelId received.\n",
-                    targetId);
+            SX_LOG_ERROR("[TrtInference] Hot-swap failed for modelId={}; inference disabled until a valid modelId arrives",
+                         targetId);
             m_currentModelId = 255;  // 强制重试
             return detections;
         }
 
         m_currentModelId = targetId;
-        fprintf(stderr, "[TrtInference] Hot-swap OK. Now using model %u: %s\n",
-                targetId, path.c_str());
+        SX_LOG_INFO("[TrtInference] Hot-swap succeeded: modelId={} path={}",
+                    targetId, path);
 
         // 4. 返回空结果 — 丢弃过时帧（旧图像 ≠ 新模型）
         return detections;
@@ -332,7 +336,7 @@ std::vector<Detection> TrtInference::Infer(
     auto* ctx = static_cast<nvinfer1::IExecutionContext*>(m_context);
     bool ok = ctx->enqueueV3(stream);
     if (!ok) {
-        fprintf(stderr, "[TrtInference] enqueueV3 FAILED\n");
+        SX_LOG_ERROR("[TrtInference] enqueueV3 failed");
         cudaStreamSynchronize(stream);
         return detections;
     }

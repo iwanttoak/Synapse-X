@@ -17,6 +17,7 @@
 //   默认值：port=8888 engine=../../model/bf416.engine hostIp=192.168.100.1
 
 #include "UdpReceiver.h"
+#include "Log.h"
 #include "TrtInference.h"
 #include "UdpReplySender.h"
 #include "CudaPreprocess.h"
@@ -62,11 +63,11 @@ static void PinThreadToCore(int core) {
     DWORD_PTR mask = 1ULL << static_cast<DWORD_PTR>(core);
     DWORD_PTR old = SetThreadAffinityMask(GetCurrentThread(), mask);
     if (old == 0) {
-        fprintf(stderr, "[CPU] SetThreadAffinityMask(core=%d) FAILED: %lu\n",
-                core, GetLastError());
+        SX_LOG_WARN("[Client] SetThreadAffinityMask(core={}) failed: {}",
+                    core, GetLastError());
     } else {
-        fprintf(stderr, "[CPU] Thread pinned to core %d (mask=0x%llX)\n",
-                core, static_cast<unsigned long long>(mask));
+        SX_LOG_INFO("[Client] Thread pinned to core {} (mask=0x{:X})",
+                    core, static_cast<unsigned long long>(mask));
     }
 }
 
@@ -149,15 +150,15 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     // ── 设置CUDA设备（必须在此线程上执行）───────────────
     cudaError_t devErr = cudaSetDevice(0);
     if (devErr != cudaSuccess) {
-        fprintf(stderr, "[CONSUMER] cudaSetDevice(0) 失败: %s\n",
-                cudaGetErrorString(devErr));
+        SX_LOG_ERROR("[Client] Consumer cudaSetDevice(0) failed: {}",
+                     cudaGetErrorString(devErr));
         return;
     }
 
     // ── 创建专用的CUDA流 ─────────────────────────────────
     if (ctx->trtReady) {
         if (!ctx->trt->SetupStream()) {
-            fprintf(stderr, "[CONSUMER] SetupStream 失败\n");
+            SX_LOG_ERROR("[Client] Consumer SetupStream failed");
             ctx->trtReady = false;
         }
     }
@@ -165,7 +166,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     // ── 初始化GPU预处理（NVRTC，运行时编译内核）────────
     if (ctx->trtReady) {
         if (!SynapseX::InitCudaPreprocess()) {
-            fprintf(stderr, "[CONSUMER] InitCudaPreprocess 失败\n");
+            SX_LOG_ERROR("[Client] Consumer InitCudaPreprocess failed");
             ctx->trtReady = false;
         }
     }
@@ -174,16 +175,15 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     if (ctx->trtReady) {
         uint8_t initModel = g_targetModelId.load(std::memory_order_relaxed);
         if (!ctx->trt->LoadEngine(initModel)) {
-            fprintf(stderr, "[CONSUMER] LoadEngine(%u) 失败. "
-                    "在收到有效 modelId 之前推理功能已禁用.\n",
-                    initModel);
+            SX_LOG_ERROR("[Client] Consumer LoadEngine({}) failed; inference disabled until a valid model id arrives",
+                         initModel);
             ctx->trtReady = false;
         }
     }
 
     // ── 预热：50 帧黑色哑元帧 ───────────────────────────
     if (ctx->trtReady) {
-        fprintf(stderr, "[CONSUMER] 正在预热 GPU（50 帧哑元帧）...\n");
+        SX_LOG_INFO("[Client] Consumer warming up GPU with 50 dummy frames");
         std::vector<uint8_t> black(
             ctx->trt->GetModelWidth() * ctx->trt->GetModelHeight() * 4, 0);
         for (int i = 0; i < 50 && g_running; ++i) {
@@ -191,7 +191,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
         }
         // CUDA 同步以确保预热完成
         cudaDeviceSynchronize();
-        fprintf(stderr, "[CONSUMER] 预热完成.\n");
+        SX_LOG_INFO("[Client] Consumer warmup complete");
     }
 
     // ═══════════════════════════════════════════════════════
@@ -264,16 +264,16 @@ static void ConsumerThread(ConsumerCtx* ctx) {
                     case 5: gameName="PUBG";    clsNames=kPubgCls;    numCls=2; break;
                     default: gameName="?";      clsNames=nullptr;     numCls=0; break;
                 }
-                fprintf(stderr, "[INFER] 帧 #%llu (hostId=%u) [%s]: %zu 个检测结果\n",
-                        static_cast<unsigned long long>(localFrameCount),
-                        fid, gameName, dets.size());
+                SX_LOG_DEBUG("[Client] Inference frame={} host_frame={} model={} detections={}",
+                             static_cast<unsigned long long>(localFrameCount),
+                             fid, gameName, dets.size());
                 int show = std::min(static_cast<int>(dets.size()), 3);
                 for (int i = 0; i < show; ++i) {
                     int cls = dets[i].classId;
                     const char* cn = (cls >= 0 && cls < numCls) ? clsNames[cls] : "?";
-                    fprintf(stderr, "  [%s] conf=%.2f box=[%.0f,%.0f,%.0f,%.0f]\n",
-                            cn, dets[i].confidence,
-                            dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
+                    SX_LOG_DEBUG("[Client]   det class={} conf={:.2f} box=[{:.0f},{:.0f},{:.0f},{:.0f}]",
+                                 cn, dets[i].confidence,
+                                 dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
                 }
             }
         }
@@ -282,8 +282,8 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     }
 
     cudaDeviceSynchronize();
-    fprintf(stderr, "[CONSUMER] Exiting. %llu frames inferred.\n",
-            static_cast<unsigned long long>(localFrameCount));
+    SX_LOG_INFO("[Client] Consumer exiting after {} inferred frames",
+                static_cast<unsigned long long>(localFrameCount));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -298,38 +298,33 @@ int main(int argc, char* argv[]) {
         ? argv[2] : "../../model/bf416.engine";
     std::string hostIp = (argc > 3)
         ? argv[3] : "192.168.100.1";
+    SynapseX::Log::Initialize("client");
+
     bool saveBmp = false;
     for (int i = 4; i < argc; ++i) {
         if (strcmp(argv[i], "--save") == 0) saveBmp = true;
     }
 
-    fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  Synapse-X Client -- Async Pipeline\n");
-    fprintf(stderr, "  Architecture: Producer(core0) | Consumer(core1)\n");
-    fprintf(stderr, "  Listening on: 0.0.0.0:%u\n", listenPort);
-    fprintf(stderr, "  Engine path:  %s\n", enginePath.c_str());
-    fprintf(stderr, "  Reply to:     %s:8889\n", hostIp.c_str());
-    fprintf(stderr, "  BMP dump:     %s\n", saveBmp ? "ON (--save)" : "OFF");
-    fprintf(stderr, "============================================\n\n");
+    SX_LOG_INFO("[Client] Starting async pipeline: listen=0.0.0.0:{} engine_path={} reply_target={}:8889 save_bmp={}",
+                listenPort, enginePath, hostIp, saveBmp);
 
     // ── 初始化模块（主线程） ────────────────────────────
     SynapseX::UdpReceiver receiver;
     if (!receiver.Initialize(listenPort)) {
-        fprintf(stderr, "[FATAL] UdpReceiver init FAILED.\n");
+        SX_LOG_CRITICAL("[Client] UdpReceiver initialization failed");
         return 1;
     }
 
     SynapseX::TrtInference trt;
     bool trtReady = trt.Initialize();
     if (!trtReady) {
-        fprintf(stderr, "[WARN] TRT inference NOT available. "
-                "Receive-only mode.\n");
+        SX_LOG_WARN("[Client] TRT inference not available; running in receive-only mode");
     }
 
     SynapseX::UdpReplySender replySender;
     bool replyReady = replySender.Initialize(hostIp, 8889);
     if (!replyReady) {
-        fprintf(stderr, "[WARN] Reply sender init FAILED.\n");
+        SX_LOG_WARN("[Client] Reply sender initialization failed");
     }
 
     // ── LIFO 帧槽（在线程间共享） ──────────────────────
@@ -347,14 +342,14 @@ int main(int argc, char* argv[]) {
     consumerCtx.sumInferMs   = 0.0;
 
     // ── 创建消费者线程 ──────────────────────────────────
-    fprintf(stderr, "[INFO] Spawning consumer thread on core 1...\n");
+    SX_LOG_INFO("[Client] Spawning consumer thread on core 1");
     std::thread consumer(ConsumerThread, &consumerCtx);
 
     // ── 将生产者（主线程）绑定到核心 0 ─────────────────
     PinThreadToCore(0);
 
-    fprintf(stderr, "[INFO] Producer on core 0. Waiting for Host data...\n");
-    fprintf(stderr, "[INFO] Press Ctrl+C to stop.\n\n");
+    SX_LOG_INFO("[Client] Producer pinned to core 0 and waiting for host data");
+    SX_LOG_INFO("[Client] Press Ctrl+C to stop");
 
     // ── 生产者状态 ─────────────────────────────────────
     std::vector<uint8_t> frameBuffer;
@@ -466,20 +461,15 @@ int main(int argc, char* argv[]) {
             uint16_t roiH = receiver.GetLastFrameHeight();
 
             if (packetsThisSec > 0 || framesThisSec > 0) {
-                fprintf(stderr,
-                    "---- 每秒统计 ---------------------------------------\n"
-                    "  ROI: %ux%u  |  FPS: %7.1f  |  帧: %5llu  |  "
-                    "丢帧: %5llu (%4.1f%%)  |  LIFO丢弃: %llu\n"
-                    "  接收: %6.2f ms  |  推理: %6.2f ms  |  "
-                    "总计: %6.2f ms  |  推理/秒: %5llu  |  带宽: %6.2f MB/s\n",
-                    roiW, roiH, fps,
-                    static_cast<unsigned long long>(framesThisSec),
-                    static_cast<unsigned long long>(droppedThisSec),
-                    dropRate,
-                    static_cast<unsigned long long>(slot.drops),
-                    avgRecvMs, avgInferMs, avgTotalMs,
-                    static_cast<unsigned long long>(inferThisSec),
-                    MBps);
+                SX_LOG_DEBUG("[Client] Stats: roi={}x{} fps={:.1f} frames={} dropped={} drop_rate={:.1f}% lifo_drops={} recv_ms={:.2f} infer_ms={:.2f} total_ms={:.2f} infer_per_sec={} bandwidth_mb_s={:.2f}",
+                             roiW, roiH, fps,
+                             static_cast<unsigned long long>(framesThisSec),
+                             static_cast<unsigned long long>(droppedThisSec),
+                             dropRate,
+                             static_cast<unsigned long long>(slot.drops),
+                             avgRecvMs, avgInferMs, avgTotalMs,
+                             static_cast<unsigned long long>(inferThisSec),
+                             MBps);
             }
 
             // 重置每秒累加器
@@ -496,33 +486,23 @@ int main(int argc, char* argv[]) {
     }
 
     // ── 关闭 ─────────────────────────────────────────────
-    fprintf(stderr, "\n[INFO] Shutting down...\n");
+    SX_LOG_INFO("[Client] Shutting down");
     slot.cv.notify_all();
     consumer.join();
 
     // ── 最终报告 ─────────────────────────────────────────
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
-    fprintf(stderr, "\n============================================\n");
-    fprintf(stderr, "  会话摘要\n");
-    fprintf(stderr, "============================================\n");
-    fprintf(stderr, "  运行时长:       %.1f 秒\n", sessionSec);
-    fprintf(stderr, "  生产者帧数:     %llu\n",
-            static_cast<unsigned long long>(producerFrames));
-    fprintf(stderr, "  消费者帧数:     %llu\n",
-            static_cast<unsigned long long>(
-                consumerCtx.frameCount.load(std::memory_order_relaxed)));
-    fprintf(stderr, "  LIFO覆盖数:     %llu\n",
-            static_cast<unsigned long long>(slot.drops));
-    fprintf(stderr, "  总丢帧数:       %llu\n",
-            static_cast<unsigned long long>(receiver.GetTotalDropped()));
-    fprintf(stderr, "  总数据包数:     %llu\n",
-            static_cast<unsigned long long>(receiver.GetTotalPackets()));
-    fprintf(stderr, "  总接收 MB:      %.2f\n",
-            receiver.GetTotalBytes() / (1024.0 * 1024.0));
-    fprintf(stderr, "  平均 FPS:       %.1f\n",
-            sessionSec > 0.0 ? producerFrames / sessionSec : 0.0);
-    fprintf(stderr, "  保存 BMP 数:    %d\n", saveIndex);
-    fprintf(stderr, "============================================\n");
+    SX_LOG_INFO("[Client] Session summary: duration_s={:.1f} producer_frames={} consumer_frames={} lifo_overwrites={} dropped_frames={} packets={} received_mb={:.2f} avg_fps={:.1f} saved_bmps={}",
+                sessionSec,
+                static_cast<unsigned long long>(producerFrames),
+                static_cast<unsigned long long>(
+                    consumerCtx.frameCount.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(slot.drops),
+                static_cast<unsigned long long>(receiver.GetTotalDropped()),
+                static_cast<unsigned long long>(receiver.GetTotalPackets()),
+                receiver.GetTotalBytes() / (1024.0 * 1024.0),
+                sessionSec > 0.0 ? producerFrames / sessionSec : 0.0,
+                saveIndex);
 
     trt.Cleanup();
     replySender.Cleanup();

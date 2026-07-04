@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Synapse-X Control Panel</title>
+<title>Synapse-X 控制面板</title>
 <style>
   :root {
     --bg: #0d1117; --card: #161b22; --border: #30363d;
@@ -11,160 +11,188 @@
     --green: #3fb950; --red: #f85149; --orange: #d2991d;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif;
-         display:flex; justify-content:center; padding:20px; }
-  .panel { max-width:520px; width:100%; }
-  h1 { font-size:20px; margin-bottom:4px; color:var(--accent); }
-  .sub { color:var(--dim); font-size:13px; margin-bottom:16px; }
+  body { background:var(--bg); color:var(--text); font-family:'Segoe UI','Microsoft YaHei',sans-serif;
+         display:flex; justify-content:center; padding:16px; }
+  .panel { max-width:1020px; width:100%; display:grid;
+           grid-template-columns:1.4fr 1fr; gap:14px; align-items:start; }
+  h1 { font-size:19px; color:var(--accent); }
+  .sub { color:var(--dim); font-size:12px; }
+  .header-row { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; }
 
-  /* ── Master Toggle ─────────────────────────── */
-  .master-toggle { display:flex; align-items:center; gap:14px;
+  /* Master Toggle */
+  .master-toggle { grid-column:1/-1; display:flex; align-items:center; gap:14px;
     background:var(--card); border:1px solid var(--border);
-    border-radius:10px; padding:16px 20px; margin-bottom:20px; }
-  .master-toggle span { font-size:16px; font-weight:600; }
+    border-radius:10px; padding:14px 18px; }
+  .master-toggle span { font-size:15px; font-weight:600; }
   .master-toggle input { display:none; }
-  .master-toggle label.tgl { width:52px; height:28px; background:var(--border);
-    border-radius:14px; cursor:pointer; position:relative; transition:background .25s; }
-  .master-toggle label.tgl::after { content:''; position:absolute; top:3px; left:3px;
+  .master-toggle label.tgl { width:48px; height:26px; background:var(--border);
+    border-radius:13px; cursor:pointer; position:relative; transition:background .25s; }
+  .master-toggle label.tgl::after { content:''; position:absolute; top:2px; left:2px;
     width:22px; height:22px; border-radius:50%; background:#fff; transition:left .25s; }
-  .master-toggle input:checked + label.tgl { background:var(--green);
-    box-shadow: 0 0 14px rgba(63,185,80,0.4); }
-  .master-toggle input:checked + label.tgl::after { left:27px; }
+  .master-toggle input:checked+label.tgl { background:var(--green);
+    box-shadow:0 0 12px rgba(63,185,80,0.35); }
+  .master-toggle input:checked+label.tgl::after { left:24px; }
   .master-status { font-size:13px; color:var(--red); }
-  .master-toggle input:checked ~ .master-status { color:var(--green); }
+  .master-toggle input:checked~.master-status { color:var(--green); }
 
-  /* ── Cards ─────────────────────────────────── */
+  /* Cards */
   .card { background:var(--card); border:1px solid var(--border);
-          border-radius:10px; padding:16px; margin-bottom:16px; }
-  .card h2 { font-size:13px; color:var(--dim); text-transform:uppercase;
-             letter-spacing:1px; margin-bottom:14px; }
+          border-radius:9px; padding:13px 15px; }
+  .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase;
+             letter-spacing:1px; margin-bottom:10px; padding-bottom:8px;
+             border-bottom:1px solid var(--border); }
   label { display:flex; justify-content:space-between; align-items:center;
-          font-size:14px; margin-bottom:6px; }
-  label span.val { color:var(--accent); font-weight:600; min-width:48px; text-align:right; }
-  input[type=range] { -webkit-appearance:none; width:100%; height:6px;
-    border-radius:3px; background:var(--border); outline:none; margin-bottom:12px; }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px;
+          font-size:13px; margin-bottom:4px; }
+  label span.val { color:var(--accent); font-weight:600; min-width:44px; text-align:right; font-size:12px; }
+  input[type=range] { -webkit-appearance:none; width:100%; height:5px;
+    border-radius:3px; background:var(--border); outline:none; margin-bottom:10px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px;
     border-radius:50%; background:var(--accent); cursor:pointer; }
-  select { width:100%; padding:6px; background:var(--bg); color:var(--text);
-    border:1px solid var(--border); border-radius:4px; margin-bottom:12px; font-size:14px; }
-  .toggle { display:flex; align-items:center; gap:10px; margin:12px 0; }
-  .toggle input { display:none; }
-  .toggle label.tgl { width:44px; height:24px; background:var(--border);
-    border-radius:12px; cursor:pointer; position:relative; transition:background .2s; }
-  .toggle label.tgl::after { content:''; position:absolute; top:2px; left:2px;
-    width:20px; height:20px; border-radius:50%; background:#fff; transition:left .2s; }
-  .toggle input:checked + label.tgl { background:var(--green); }
-  .toggle input:checked + label.tgl::after { left:22px; }
+  select { width:100%; padding:5px 6px; background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:4px; margin-bottom:10px; font-size:13px; }
 
-  /* ── Stats ──────────────────────────────────── */
-  .stat-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px; }
-  .stat-item { display:flex; justify-content:space-between; padding:4px 8px;
-               background:#0d1117; border-radius:4px; }
+  /* Stats */
+  .stat-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; }
+  .stat-item { display:flex; justify-content:space-between; padding:3px 7px;
+               background:#0d1117; border-radius:3px; }
   .stat-val { color:var(--accent); font-weight:600; }
   .stat-val.good { color:var(--green); }
-  .target-box { font-size:13px; padding:8px; background:#0d1117; border-radius:4px;
-                margin-top:8px; display:none; }
+  .target-box { font-size:12px; padding:6px 8px; background:#0d1117; border-radius:4px;
+                margin-top:6px; display:none; }
   .target-box.active { display:block; border-left:3px solid var(--red); }
   .target-box .cls { color:var(--red); font-weight:600; }
 
-  /* ── Details / Advanced ─────────────────────── */
-  details { margin-top:4px; }
-  details summary { font-size:12px; color:var(--dim); cursor:pointer;
-    padding:6px 0; user-select:none; }
-  details summary:hover { color:var(--text); }
-  details .card { margin-top:12px; }
+  /* Save/Load */
+  .preset-input { display:flex; gap:8px; margin-bottom:10px; }
+  .preset-input input { flex:1; padding:5px 8px; background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:4px; font-size:13px; }
+  .btn { padding:5px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer;
+         font-weight:600; transition:opacity .15s; }
+  .btn:hover { opacity:0.85; }
+  .btn-save { background:var(--accent); color:#fff; }
+  .btn-load { background:var(--green); color:#000; }
+  .btn-del { background:#30363d; color:var(--red); }
+  .preset-list { max-height:200px; overflow-y:auto; }
+  .preset-row { display:flex; justify-content:space-between; align-items:center;
+    padding:5px 8px; border-bottom:1px solid var(--border); font-size:13px; }
+  .preset-row:last-child { border-bottom:none; }
+  .preset-row .btns { display:flex; gap:4px; }
 
-  .footer { text-align:center; color:var(--dim); font-size:11px; margin-top:8px; }
+  .footer { grid-column:1/-1; text-align:center; color:var(--dim); font-size:11px; margin-top:4px; }
+
+  /* Responsive */
+  @media (max-width:780px) {
+    .panel { grid-template-columns:1fr; max-width:520px; }
+  }
 </style>
 </head>
 <body>
 <div class="panel">
-  <h1>Synapse-X Control Panel</h1>
-  <div class="sub">Real-time tuning — changes apply instantly</div>
+  <!-- Header -->
+  <div class="header-row"><h1>Synapse-X 控制面板</h1><div class="sub">实时调参 · 修改即时生效</div></div>
 
-  <!-- ── Master Toggle ─────────────────────────── -->
+  <!-- Master Toggle -->
   <div class="master-toggle">
-    <span>System Status</span>
+    <span>系统状态</span>
     <input type="checkbox" id="aimEnabled" checked>
     <label class="tgl" for="aimEnabled"></label>
-    <span class="master-status" id="masterStatus">ACTIVE</span>
+    <span class="master-status" id="masterStatus">运行中</span>
   </div>
 
-  <!-- ── Aim Parameters ────────────────────────── -->
+  <!-- ===== 左列 ===== -->
+
+  <!-- 瞄准参数 -->
   <div class="card">
-    <h2>Aim Parameters</h2>
-    <label>Tracking Speed (Kp) <span class="val" id="vKp">0.30</span></label>
+    <h2>瞄准参数</h2>
+    <label>跟枪速度 (Kp) <span class="val" id="vKp">0.30</span></label>
     <input type="range" id="Kp" min="0.05" max="1.50" step="0.01" value="0.30">
 
-    <label>Smoothness / Humanize (Kd) <span class="val" id="vKd">0.05</span></label>
+    <label>平滑阻尼 (Kd) <span class="val" id="vKd">0.05</span></label>
     <input type="range" id="Kd" min="0.00" max="0.50" step="0.01" value="0.05">
 
-    <label>FOV Radius (px) <span class="val" id="vaimRange">200</span></label>
+    <label>视野半径 (px) <span class="val" id="vaimRange">200</span></label>
     <input type="range" id="aimRange" min="50" max="1000" step="10" value="200">
 
-    <label>Aim Point <span class="val" id="vaimPoint">Body</span></label>
+    <label>瞄准部位 <span class="val" id="vaimPoint">身体</span></label>
     <select id="aimPoint">
-      <option value="0">Body (bbox center)</option>
-      <option value="1">Head (top of bbox)</option>
+      <option value="0">身体（边界框中心）</option>
+      <option value="1">头部（边界框顶部）</option>
     </select>
 
     <div id="headOffsetRow" style="display:none">
-    <label>Head Offset <span class="val" id="vheadOffset">0.20</span></label>
+    <label>头部偏移 <span class="val" id="vheadOffset">0.20</span></label>
     <input type="range" id="headOffset" min="0.05" max="0.25" step="0.01" value="0.20">
     </div>
+  </div>
 
-    <label>Game Resolution</label>
+  <!-- 游戏设置 -->
+  <div class="card">
+    <h2>游戏设置</h2>
+    <label>游戏分辨率</label>
     <select id="gameRes">
-      <option value="3840,2160">3840x2160 (16:9 native)</option>
-      <option value="3456,2160">3456x2160 (16:10 stretched)</option>
-      <option value="2880,2160">2880x2160 (4:3 stretched)</option>
+      <option value="3840,2160">3840x2160 (16:9 原生)</option>
+      <option value="3456,2160">3456x2160 (16:10 拉伸)</option>
+      <option value="2880,2160">2880x2160 (4:3 拉伸)</option>
       <option value="2560,1440">2560x1440 (16:9)</option>
       <option value="1920,1080">1920x1080 (16:9)</option>
     </select>
 
-    <label>Select Game <span class="val" id="vgameSelect">Apex</span></label>
+    <label>选择游戏 <span class="val" id="vgameSelect">Apex 英雄</span></label>
     <select id="gameSelect">
-      <option value="0">Apex Legends (ID: 0)</option>
-      <option value="1">Delta Force (ID: 1)</option>
-      <option value="2">Battlefield 6 (ID: 2)</option>
-      <option value="3">Overwatch 2 (ID: 3)</option>
-      <option value="4">Aimlabs (ID: 4)</option>
-      <option value="5">PUBG (ID: 5)</option>
+      <option value="0">Apex 英雄</option>
+      <option value="1">三角洲行动</option>
+      <option value="2">战地 6</option>
+      <option value="3">守望先锋 2</option>
+      <option value="4">Aimlabs</option>
+      <option value="5">PUBG</option>
     </select>
   </div>
 
-  <!-- ── Advanced / Developer Tools ────────────── -->
-  <details>
-    <summary>▸ Advanced &amp; Developer Tools</summary>
-    <div class="card">
-      <h2>Confidence Filter</h2>
-      <label>Min Confidence <span class="val" id="vminConfidence">0.25</span></label>
-      <input type="range" id="minConfidence" min="0.0" max="1.0" step="0.01" value="0.25">
-      <div id="deltaHeadConfRow" style="display:none">
-      <label>Delta Head Conf <span class="val" id="vdeltaHeadConfidence">0.40</span></label>
-      <input type="range" id="deltaHeadConfidence" min="0.10" max="0.80" step="0.01" value="0.40">
-      </div>
-    </div>
-    <div class="card">
-      <h2>Dynamic Kp Engine</h2>
-      <label>Max Kp (Close-range) <span class="val" id="vkpMax">0.75</span></label>
-      <input type="range" id="kpMax" min="0.10" max="1.50" step="0.05" value="0.75">
-      <label>Kp Decay (k) <span class="val" id="vkpDecay">0.05</span></label>
-      <input type="range" id="kpDecay" min="0.00" max="0.15" step="0.01" value="0.05">
-    </div>
-    <div class="card">
-      <h2>Pipeline Stats</h2>
-      <div class="stat-row" id="stats"></div>
-      <div class="target-box" id="targetBox">
-        Target: <span class="cls" id="tCls">enemy</span>
-        conf=<span id="tConf">0.00</span>
-        dist=<span id="tDist">0</span>px
-        pos=(<span id="tX">0</span>, <span id="tY">0</span>)
-      </div>
-    </div>
-  </details>
+  <!-- 动态 Kp 引擎 -->
+  <div class="card">
+    <h2>动态 Kp 引擎</h2>
+    <label>最大 Kp（贴脸磁吸）<span class="val" id="vkpMax">0.75</span></label>
+    <input type="range" id="kpMax" min="0.10" max="1.50" step="0.05" value="0.75">
+    <label>Kp 衰减陡度 <span class="val" id="vkpDecay">0.05</span></label>
+    <input type="range" id="kpDecay" min="0.00" max="0.15" step="0.01" value="0.05">
+  </div>
 
-  <div class="footer">Synapse-X &middot; connected to <span id="hostInfo">loading...</span></div>
+  <!-- 置信度过滤 -->
+  <div class="card">
+    <h2>置信度过滤</h2>
+    <label>全局置信度 <span class="val" id="vminConfidence">0.25</span></label>
+    <input type="range" id="minConfidence" min="0.0" max="1.0" step="0.01" value="0.25">
+    <div id="deltaHeadConfRow" style="display:none">
+    <label>Delta/PUBG 头部置信度 <span class="val" id="vdeltaHeadConfidence">0.40</span></label>
+    <input type="range" id="deltaHeadConfidence" min="0.10" max="0.80" step="0.01" value="0.40">
+    </div>
+  </div>
+
+  <!-- ===== 右列 ===== -->
+
+  <!-- 管线统计 -->
+  <div class="card">
+    <h2>管线统计</h2>
+    <div class="stat-row" id="stats"></div>
+    <div class="target-box" id="targetBox">
+      目标：<span class="cls" id="tCls">敌人</span>
+      置信度=<span id="tConf">0.00</span>
+      距离=<span id="tDist">0</span>px
+      坐标=(<span id="tX">0</span>, <span id="tY">0</span>)
+    </div>
+  </div>
+
+  <!-- 参数方案 -->
+  <div class="card">
+    <h2>参数方案</h2>
+    <div class="preset-input">
+      <input type="text" id="presetName" placeholder="输入方案名称..." maxlength="30">
+      <button class="btn btn-save" id="btnSave">保存</button>
+    </div>
+    <div class="preset-list" id="presetList"></div>
+  </div>
+
+  <div class="footer">Synapse-X · 已连接 <span id="hostInfo">...</span></div>
 </div>
 
 <script>
@@ -175,49 +203,53 @@ var HOST = location.origin;
 var $ = function(id) { return document.getElementById(id); };
 var initialConfigLoaded = false;
 
+// ═══════════════════════════════════════════════════════════
+//  配置读写
+// ═══════════════════════════════════════════════════════════
+
 function getConfig() {
   return {
-    Kp:            parseFloat($('Kp').value),
-    Kd:            parseFloat($('Kd').value),
-    aimRange:      parseInt($('aimRange').value),
+    Kp: parseFloat($('Kp').value),
+    Kd: parseFloat($('Kd').value),
+    aimRange: parseInt($('aimRange').value),
     minConfidence: parseFloat($('minConfidence').value),
-    aimPoint:      parseInt($('aimPoint').value),
-    headOffset:         parseFloat($('headOffset').value),
+    aimPoint: parseInt($('aimPoint').value),
+    headOffset: parseFloat($('headOffset').value),
     deltaHeadConfidence: parseFloat($('deltaHeadConfidence').value),
-    kpMax:         parseFloat($('kpMax').value),
-    kpDecay:       parseFloat($('kpDecay').value),
-    gameW:         parseInt($('gameRes').value.split(',')[0]),
-    gameH:         parseInt($('gameRes').value.split(',')[1]),
-    modelId:       parseInt($('gameSelect').value),
-    aimEnabled:    $('aimEnabled').checked
+    kpMax: parseFloat($('kpMax').value),
+    kpDecay: parseFloat($('kpDecay').value),
+    gameW: parseInt($('gameRes').value.split(',')[0]),
+    gameH: parseInt($('gameRes').value.split(',')[1]),
+    modelId: parseInt($('gameSelect').value),
+    aimEnabled: $('aimEnabled').checked
   };
 }
 
 function setConfigUI(cfg) {
-  $('Kp').value            = (cfg.Kp != null) ? cfg.Kp : 0.30;
-  $('Kd').value            = (cfg.Kd != null) ? cfg.Kd : 0.05;
-  $('aimRange').value      = cfg.aimRange || 200;
+  $('Kp').value = (cfg.Kp != null) ? cfg.Kp : 0.30;
+  $('Kd').value = (cfg.Kd != null) ? cfg.Kd : 0.05;
+  $('aimRange').value = cfg.aimRange || 200;
   $('minConfidence').value = cfg.minConfidence || 0.25;
-  $('aimPoint').value      = cfg.aimPoint || 0;
-  $('headOffset').value          = cfg.headOffset || 0.20;
+  $('aimPoint').value = cfg.aimPoint || 0;
+  $('headOffset').value = cfg.headOffset || 0.20;
   $('deltaHeadConfidence').value = cfg.deltaHeadConfidence || 0.40;
-  $('kpMax').value   = (cfg.kpMax != null) ? cfg.kpMax : 0.75;
+  $('kpMax').value = (cfg.kpMax != null) ? cfg.kpMax : 0.75;
   $('kpDecay').value = (cfg.kpDecay != null) ? cfg.kpDecay : 0.05;
   var gw = cfg.gameW || 3840, gh = cfg.gameH || 2160;
-  $('gameRes').value         = gw + ',' + gh;
-  $('gameSelect').value      = cfg.modelId || 0;
-  var gn = ['Apex','Delta Force','Battlefield 6','Overwatch 2','Aimlabs','PUBG'];
-  $('vgameSelect').textContent = gn[cfg.modelId||0] || 'Apex';
-  $('aimEnabled').checked  = cfg.aimEnabled !== false;
-  $('masterStatus').textContent = $('aimEnabled').checked ? 'ACTIVE' : 'PAUSED';
-  $('vKp').textContent            = (cfg.Kp||0.30).toFixed(2);
-  $('vKd').textContent            = (cfg.Kd||0.05).toFixed(2);
-  $('vaimRange').textContent      = cfg.aimRange || 200;
+  $('gameRes').value = gw + ',' + gh;
+  $('gameSelect').value = cfg.modelId || 0;
+  var gn = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
+  $('vgameSelect').textContent = gn[cfg.modelId||0] || 'Apex 英雄';
+  $('aimEnabled').checked = cfg.aimEnabled !== false;
+  $('masterStatus').textContent = $('aimEnabled').checked ? '运行中' : '已暂停';
+  $('vKp').textContent = (cfg.Kp||0.30).toFixed(2);
+  $('vKd').textContent = (cfg.Kd||0.05).toFixed(2);
+  $('vaimRange').textContent = cfg.aimRange || 200;
   $('vminConfidence').textContent = cfg.minConfidence || 0.25;
-  $('vaimPoint').textContent      = (cfg.aimPoint===1) ? 'Head' : 'Body';
-  $('vheadOffset').textContent    = (cfg.headOffset||0.20).toFixed(2);
+  $('vaimPoint').textContent = (cfg.aimPoint===1) ? '头部' : '身体';
+  $('vheadOffset').textContent = (cfg.headOffset||0.20).toFixed(2);
   $('vdeltaHeadConfidence').textContent = (cfg.deltaHeadConfidence||0.40).toFixed(2);
-  $('vkpMax').textContent   = (cfg.kpMax != null ? cfg.kpMax : 0.75).toFixed(2);
+  $('vkpMax').textContent = (cfg.kpMax != null ? cfg.kpMax : 0.75).toFixed(2);
   $('vkpDecay').textContent = (cfg.kpDecay != null ? cfg.kpDecay : 0.05).toFixed(2);
   updateHeadOffsetUI();
 }
@@ -228,6 +260,10 @@ function postConfig() {
     body: JSON.stringify(getConfig())
   }).catch(function(){});
 }
+
+// ═══════════════════════════════════════════════════════════
+//  滑块绑定
+// ═══════════════════════════════════════════════════════════
 
 ['Kp','Kd','aimRange','minConfidence','headOffset','deltaHeadConfidence','kpMax','kpDecay'].forEach(function(id) {
   $(id).addEventListener('input', function() {
@@ -240,29 +276,98 @@ function postConfig() {
   });
 });
 $('aimEnabled').addEventListener('change', function() {
-  $('masterStatus').textContent = this.checked ? 'ACTIVE' : 'PAUSED';
+  $('masterStatus').textContent = this.checked ? '运行中' : '已暂停';
   postConfig();
 });
 $('gameRes').addEventListener('change', postConfig);
+
 function updateHeadOffsetUI() {
-  var isHead  = $('aimPoint').value === '1';
+  var isHead = $('aimPoint').value === '1';
   var isDelta = (parseInt($('gameSelect').value) === 1 || parseInt($('gameSelect').value) === 5);
-  var show = isHead && !isDelta;
-  $('headOffsetRow').style.display = show ? '' : 'none';
-  // Delta head confidence — only for Delta
+  $('headOffsetRow').style.display = (isHead && !isDelta) ? '' : 'none';
   $('deltaHeadConfRow').style.display = isDelta ? '' : 'none';
 }
+
 $('gameSelect').addEventListener('change', function() {
-  var names = ['Apex','Delta Force','Battlefield 6','Overwatch 2','Aimlabs','PUBG'];
-  $('vgameSelect').textContent = names[parseInt(this.value)] || 'Apex';
+  var names = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
+  $('vgameSelect').textContent = names[parseInt(this.value)] || 'Apex 英雄';
   updateHeadOffsetUI();
   postConfig();
 });
 $('aimPoint').addEventListener('change', function() {
-  $('vaimPoint').textContent = this.value==='1' ? 'Head' : 'Body';
+  $('vaimPoint').textContent = this.value==='1' ? '头部' : '身体';
   updateHeadOffsetUI();
   postConfig();
 });
+
+// ═══════════════════════════════════════════════════════════
+//  参数方案保存 / 加载 / 删除 (localStorage)
+// ═══════════════════════════════════════════════════════════
+
+var PRESET_PREFIX = 'sx_preset_';
+
+function listPresets() {
+  var names = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key.indexOf(PRESET_PREFIX) === 0) names.push(key.slice(PRESET_PREFIX.length));
+  }
+  names.sort();
+  var html = '';
+  names.forEach(function(name) {
+    html += '<div class="preset-row"><span>'+escHtml(name)+
+      '</span><div class="btns">'+
+      '<button class="btn btn-load" data-load="'+escAttr(name)+'">加载</button>'+
+      '<button class="btn btn-del" data-del="'+escAttr(name)+'">删</button>'+
+      '</div></div>';
+  });
+  $('presetList').innerHTML = html || '<div style="font-size:12px;color:var(--dim);padding:8px 0;">暂无保存的方案</div>';
+
+  // 绑定加载按钮
+  [].forEach.call(document.querySelectorAll('[data-load]'), function(btn) {
+    btn.addEventListener('click', function() {
+      var name = this.getAttribute('data-load');
+      var json = localStorage.getItem(PRESET_PREFIX + name);
+      if (json) {
+        try {
+          var cfg = JSON.parse(json);
+          setConfigUI(cfg);
+          postConfig();
+          $('presetName').value = name;
+        } catch(e) { alert('方案数据损坏：' + name); }
+      }
+    });
+  });
+  // 绑定删除按钮
+  [].forEach.call(document.querySelectorAll('[data-del]'), function(btn) {
+    btn.addEventListener('click', function() {
+      var name = this.getAttribute('data-del');
+      if (confirm('确定删除方案 "' + name + '" 吗？')) {
+        localStorage.removeItem(PRESET_PREFIX + name);
+        listPresets();
+      }
+    });
+  });
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+$('btnSave').addEventListener('click', function() {
+  var name = $('presetName').value.trim();
+  if (!name) { alert('请输入方案名称'); return; }
+  var cfg = getConfig();
+  // 不保存 aimEnabled 状态 — 这个由热键控制
+  localStorage.setItem(PRESET_PREFIX + name, JSON.stringify(cfg));
+  listPresets();
+});
+
+// 初始加载方案列表
+listPresets();
+
+// ═══════════════════════════════════════════════════════════
+//  轮询
+// ═══════════════════════════════════════════════════════════
 
 function poll() {
   fetch(HOST+'/api/state')
@@ -273,17 +378,17 @@ function poll() {
         initialConfigLoaded = true;
       }
       $('stats').innerHTML =
-        '<div class="stat-item">Send FPS <span class="stat-val good">'+s.sendFps.toFixed(0)+'</span></div>'+
-        '<div class="stat-item">Capture FPS <span class="stat-val">'+s.captureFps.toFixed(0)+'</span></div>'+
-        '<div class="stat-item">Pipeline <span class="stat-val good">'+s.pipelineMs.toFixed(2)+' ms</span></div>'+
-        '<div class="stat-item">Compress <span class="stat-val">'+s.compressMs.toFixed(2)+' ms</span></div>'+
-        '<div class="stat-item">Fresh frames <span class="stat-val">'+s.freshFrames+'</span></div>'+
-        '<div class="stat-item">Cache frames <span class="stat-val">'+s.cacheFrames+'</span></div>'+
-        '<div class="stat-item">Total sent <span class="stat-val">'+s.totalSent+'</span></div>'+
-        '<div class="stat-item">Uptime <span class="stat-val">'+(s.totalSent/170).toFixed(0)+'s</span></div>';
+        '<div class="stat-item">发送帧率 <span class="stat-val good">'+s.sendFps.toFixed(0)+'</span></div>'+
+        '<div class="stat-item">采集帧率 <span class="stat-val">'+s.captureFps.toFixed(0)+'</span></div>'+
+        '<div class="stat-item">管线延迟 <span class="stat-val good">'+s.pipelineMs.toFixed(2)+' ms</span></div>'+
+        '<div class="stat-item">压缩耗时 <span class="stat-val">'+s.compressMs.toFixed(2)+' ms</span></div>'+
+        '<div class="stat-item">新鲜帧 <span class="stat-val">'+s.freshFrames+'</span></div>'+
+        '<div class="stat-item">缓存帧 <span class="stat-val">'+s.cacheFrames+'</span></div>'+
+        '<div class="stat-item">总发送 <span class="stat-val">'+s.totalSent+'</span></div>'+
+        '<div class="stat-item">运行时间 <span class="stat-val">'+(s.totalSent/170).toFixed(0)+'s</span></div>';
       if (s.target && s.target.active) {
         $('targetBox').className = 'target-box active';
-        $('tCls').textContent = s.target.classId===0 ? 'enemy' : 'teammate';
+        $('tCls').textContent = s.target.classId===0 ? '敌人' : '队友';
         $('tConf').textContent = s.target.confidence.toFixed(2);
         $('tDist').textContent = s.target.distance.toFixed(0);
         $('tX').textContent = s.target.screenX.toFixed(0);
@@ -292,7 +397,7 @@ function poll() {
         $('targetBox').className = 'target-box';
       }
     })
-    .catch(function(e) { console.error('poll error:', e); });
+    .catch(function(e) { console.error('轮询错误:', e); });
   setTimeout(poll, 500);
 }
 

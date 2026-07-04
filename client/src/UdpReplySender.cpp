@@ -2,6 +2,7 @@
 // 将检测结果打包为紧凑的UDP回复并发送给主机。
 
 #include "UdpReplySender.h"
+#include "Log.h"
 #include "TrtInference.h"
 #include "ReplyPacket.h"
 
@@ -31,8 +32,7 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     // ── WinSock 启动 ────────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "[UdpReplySender] WSAStartup FAILED: %d\n",
-                WSAGetLastError());
+        SX_LOG_ERROR("[UdpReplySender] WSAStartup failed: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
@@ -40,8 +40,7 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     // ── 创建UDP套接字 ──────────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        fprintf(stderr, "[UdpReplySender] socket() FAILED: %d\n",
-                WSAGetLastError());
+        SX_LOG_ERROR("[UdpReplySender] socket() failed: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -61,15 +60,14 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     m_targetAddr.sin_port   = htons(port);
 
     if (inet_pton(AF_INET, hostIp.c_str(), &m_targetAddr.sin_addr) != 1) {
-        fprintf(stderr, "[UdpReplySender] inet_pton FAILED for '%s': %d\n",
-                hostIp.c_str(), WSAGetLastError());
+        SX_LOG_ERROR("[UdpReplySender] inet_pton failed for '{}': {}",
+                     hostIp, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    fprintf(stderr, "[UdpReplySender] Ready -- sending to %s:%u\n",
-            hostIp.c_str(), port);
+    SX_LOG_INFO("[UdpReplySender] Ready: sending to {}:{}", hostIp, port);
     return true;
 }
 
@@ -119,7 +117,7 @@ bool UdpReplySender::SendReplies(uint32_t frameId,
     if (sent == SOCKET_ERROR) {
         int err = WSAGetLastError();
         if (err != WSAEWOULDBLOCK) {
-            fprintf(stderr, "[UdpReplySender] sendto FAILED: %d\n", err);
+            SX_LOG_ERROR("[UdpReplySender] sendto failed: {}", err);
         }
         return false;
     }

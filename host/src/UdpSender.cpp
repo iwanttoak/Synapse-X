@@ -9,6 +9,7 @@
 //   └──────────────┴─────────────────────────────────┘
 
 #include "UdpSender.h"
+#include "Log.h"
 #include "PacketHeader.h"
 
 #include <winsock2.h>
@@ -37,7 +38,7 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     // ── WinSock 启动 ──────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "[UdpSender] WSAStartup 失败：%d\n", WSAGetLastError());
+        SX_LOG_ERROR("[UdpSender] WSAStartup failed: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
@@ -45,7 +46,7 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     // ── 创建 UDP 套接字 ────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        fprintf(stderr, "[UdpSender] socket() 失败：%d\n", WSAGetLastError());
+        SX_LOG_ERROR("[UdpSender] socket() failed: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -68,15 +69,15 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     m_targetAddr.sin_port   = htons(port);
 
     if (inet_pton(AF_INET, targetIp.c_str(), &m_targetAddr.sin_addr) != 1) {
-        fprintf(stderr, "[UdpSender] inet_pton 失败，目标 '%s'：%d\n",
-                targetIp.c_str(), WSAGetLastError());
+        SX_LOG_ERROR("[UdpSender] inet_pton failed for target '{}': {}",
+                     targetIp, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    fprintf(stderr, "[UdpSender] 就绪 -- 目标 %s:%u, 发送缓冲区 %d KB, 非阻塞\n",
-            targetIp.c_str(), port, kSendBufSize / 1024);
+    SX_LOG_INFO("[UdpSender] Ready: target={}:{}, send_buffer={}KB, nonblocking=true",
+                targetIp, port, kSendBufSize / 1024);
     return true;
 }
 
@@ -145,13 +146,13 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
                 // 在 170 Hz 下，单帧丢失不可见。
                 static int dropCount = 0;
                 if (++dropCount % 100 == 1) {
-                    fprintf(stderr, "[UdpSender] 数据包已丢弃（发送缓冲区满，"
-                            "共 %d 次丢弃）\n", dropCount);
+                    SX_LOG_WARN("[UdpSender] Packet dropped because send buffer is full (drop_count={})",
+                                dropCount);
                 }
                 return false;
             }
-            fprintf(stderr, "[UdpSender] sendto 失败，块 %u/%u：错误码=%d\n",
-                    i + 1, totalChunks, err);
+            SX_LOG_ERROR("[UdpSender] sendto failed at chunk {}/{}: error={}",
+                         i + 1, totalChunks, err);
             return false;
         }
 
