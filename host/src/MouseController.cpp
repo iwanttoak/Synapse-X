@@ -23,7 +23,7 @@ bool MouseController::Load(const char* dllPath) {
 
     m_dll = LoadLibraryA(dllPath);
     if (!m_dll) {
-        SX_LOG_ERROR("[MouseCtrl] LoadLibraryA('{}') failed (error={})",
+        SX_LOG_ERROR("[MouseCtrl] LoadLibraryA('{}') 失败 (错误={})",
                      dllPath, static_cast<unsigned long>(GetLastError()));
         return false;
     }
@@ -32,21 +32,21 @@ bool MouseController::Load(const char* dllPath) {
     auto openDev = reinterpret_cast<OpenDeviceFn>(
         GetProcAddress(m_dll, "OpenDevice"));
     if (!openDev || openDev() == 0) {
-        SX_LOG_ERROR("[MouseCtrl] OpenDevice failed. Try running as administrator.");
+        SX_LOG_ERROR("[MouseCtrl] OpenDevice 失败。请尝试以管理员身份运行。");
         FreeLibrary(m_dll); m_dll = nullptr;
         return false;
     }
 
     m_moveR = reinterpret_cast<MoveRFn>(GetProcAddress(m_dll, "MoveR"));
     if (!m_moveR) {
-        SX_LOG_ERROR("[MouseCtrl] GetProcAddress('MoveR') failed");
+        SX_LOG_ERROR("[MouseCtrl] GetProcAddress('MoveR') 失败");
         FreeLibrary(m_dll); m_dll = nullptr;
         return false;
     }
 
     m_loaded = true;
     ResetPDState();
-    SX_LOG_INFO("[MouseCtrl] Ready: PD + subpixel + delay compensation (Kp={:.2f}, Kd={:.2f})",
+    SX_LOG_INFO("[MouseCtrl] 就绪: PD + 亚像素 + 延迟补偿 (Kp={:.2f}, Kd={:.2f})",
                 static_cast<double>(m_cfg.Kp), static_cast<double>(m_cfg.Kd));
     return true;
 }

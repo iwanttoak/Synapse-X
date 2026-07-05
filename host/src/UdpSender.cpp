@@ -38,7 +38,7 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     // ── WinSock 启动 ──────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        SX_LOG_ERROR("[UdpSender] WSAStartup failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpSender] WSAStartup 失败: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
@@ -46,7 +46,7 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     // ── 创建 UDP 套接字 ────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        SX_LOG_ERROR("[UdpSender] socket() failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpSender] socket() 失败: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -69,14 +69,14 @@ bool UdpSender::Initialize(const std::string& targetIp, uint16_t port) {
     m_targetAddr.sin_port   = htons(port);
 
     if (inet_pton(AF_INET, targetIp.c_str(), &m_targetAddr.sin_addr) != 1) {
-        SX_LOG_ERROR("[UdpSender] inet_pton failed for target '{}': {}",
+        SX_LOG_ERROR("[UdpSender] 目标地址 inet_pton 失败 '{}': {}",
                      targetIp, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    SX_LOG_INFO("[UdpSender] Ready: target={}:{}, send_buffer={}KB, nonblocking=true",
+    SX_LOG_INFO("[UdpSender] 就绪: 目标={}:{} 发送缓冲区={}KB 非阻塞=true",
                 targetIp, port, kSendBufSize / 1024);
     return true;
 }
@@ -146,12 +146,12 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
                 // 在 170 Hz 下，单帧丢失不可见。
                 static int dropCount = 0;
                 if (++dropCount % 100 == 1) {
-                    SX_LOG_WARN("[UdpSender] Packet dropped because send buffer is full (drop_count={})",
+                    SX_LOG_WARN("[UdpSender] 数据包因发送缓冲区满而丢弃 (丢弃次数={})",
                                 dropCount);
                 }
                 return false;
             }
-            SX_LOG_ERROR("[UdpSender] sendto failed at chunk {}/{}: error={}",
+            SX_LOG_ERROR("[UdpSender] sendto 在分片 {}/{} 处失败: 错误={}",
                          i + 1, totalChunks, err);
             return false;
         }

@@ -55,13 +55,13 @@ bool DxgiCapturer::Initialize(int roiWidth, int roiHeight) {
     m_roiHeight = roiHeight;
 
     if (!CreateDeviceAndDuplication()) {
-        SX_LOG_ERROR("[DxgiCapturer] CreateDeviceAndDuplication() returned false during initialization");
+        SX_LOG_ERROR("[DxgiCapturer] CreateDeviceAndDuplication() 初始化期间返回 false");
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    SX_LOG_INFO("[DxgiCapturer] Ready: output={}x{}, roi={}x{}, crop=center",
+    SX_LOG_INFO("[DxgiCapturer] 就绪: 输出={}x{} ROI={}x{} 居中裁剪",
                 m_outputWidth, m_outputHeight, m_roiWidth, m_roiHeight);
     return true;
 }
@@ -74,10 +74,10 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
             now - m_lastRebuildAttempt).count();
         if (elapsed >= kRebuildCooldownMs) {
             m_lastRebuildAttempt = now;
-            SX_LOG_WARN("[DxgiCapturer] Capture path unavailable, attempting rebuild after {} ms cooldown",
+            SX_LOG_WARN("[DxgiCapturer] 采集路径不可用，{}ms 冷却后尝试重建",
                         static_cast<int>(elapsed));
             if (CreateDeviceAndDuplication()) {
-                SX_LOG_INFO("[DxgiCapturer] Rebuild succeeded after cold start");
+                SX_LOG_INFO("[DxgiCapturer] 冷启动后重建成功");
                 m_initialized = true;
                 // 继续执行下面的采集尝试
             }
@@ -115,7 +115,7 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
         }
         m_lastRebuildAttempt = now;
 
-        SX_LOG_WARN("[DxgiCapturer] DXGI access lost, rebuilding duplication after {} ms",
+        SX_LOG_WARN("[DxgiCapturer] DXGI 访问丢失，{}ms 后重建复制接口",
                     static_cast<int>(elapsed));
         m_recreating = true;
         ReleaseResources();
@@ -124,11 +124,11 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         if (CreateDeviceAndDuplication()) {
-            SX_LOG_INFO("[DxgiCapturer] Rebuild succeeded after DXGI access loss");
+            SX_LOG_INFO("[DxgiCapturer] DXGI 访问丢失后重建成功");
             m_recreating = false;
             m_initialized = true;
         } else {
-            SX_LOG_ERROR("[DxgiCapturer] Rebuild failed after DXGI access loss; will retry after cooldown");
+            SX_LOG_ERROR("[DxgiCapturer] DXGI 访问丢失后重建失败；冷却后将重试");
             m_initialized = false;
             m_recreating = false;
         }
@@ -136,7 +136,7 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
     }
 
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] AcquireNextFrame failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] AcquireNextFrame 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -147,7 +147,7 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> desktopTexture;
     hr = desktopResource.As(&desktopTexture);
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] QI -> ID3D11Texture2D failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] QI -> ID3D11Texture2D 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         m_duplication->ReleaseFrame();
         return false;
@@ -189,7 +189,7 @@ bool DxgiCapturer::CaptureFrame(std::vector<uint8_t>& outBuffer) {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     hr = m_context->Map(m_stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] Map(staging_texture) failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] Map(staging_texture) 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -250,7 +250,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     );
 
     if (FAILED(hr) && (createFlags & D3D11_CREATE_DEVICE_DEBUG)) {
-        SX_LOG_WARN("[DxgiCapturer] D3D11 debug layer unavailable, falling back to release device");
+        SX_LOG_WARN("[DxgiCapturer] D3D11 调试层不可用，回退到 release 设备");
         createFlags &= ~D3D11_CREATE_DEVICE_DEBUG;
         hr = D3D11CreateDevice(
             nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
@@ -261,7 +261,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     }
 
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] D3D11CreateDevice failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] D3D11CreateDevice 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -270,7 +270,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
     hr = m_device.As(&dxgiDevice);
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] QI -> IDXGIDevice failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] QI -> IDXGIDevice 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -278,7 +278,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
     hr = dxgiDevice->GetAdapter(adapter.GetAddressOf());
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] IDXGIDevice::GetAdapter failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] IDXGIDevice::GetAdapter 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -286,7 +286,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     // 记录适配器描述信息，用于多 GPU 调试
     DXGI_ADAPTER_DESC adapterDesc = {};
     adapter->GetDesc(&adapterDesc);
-    SX_LOG_DEBUG("[DxgiCapturer] Adapter='{}' vendor=0x{:04X} device=0x{:04X}",
+    SX_LOG_DEBUG("[DxgiCapturer] 适配器='{}' vendor=0x{:04X} device=0x{:04X}",
                  Narrow(adapterDesc.Description),
                  adapterDesc.VendorId,
                  adapterDesc.DeviceId);
@@ -312,7 +312,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
         int w = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
         int h = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
 
-        SX_LOG_DEBUG("[DxgiCapturer] Output[{}]='{}' size={}x{} origin=({}, {}) attached={}",
+        SX_LOG_DEBUG("[DxgiCapturer] Output[{}]='{}' 尺寸={}x{} 原点=({}, {}) 已连接={}",
                      outputIndex,
                      Narrow(desc.DeviceName),
                      w,
@@ -330,7 +330,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     }
 
     if (!foundOutput) {
-        SX_LOG_ERROR("[DxgiCapturer] No attached desktop output found after scanning {} outputs",
+        SX_LOG_ERROR("[DxgiCapturer] 扫描后未找到已连接的桌面输出，已扫描 {} outputs",
                      outputIndex);
         return false;
     }
@@ -338,7 +338,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     Microsoft::WRL::ComPtr<IDXGIOutput1> output1;
     hr = output.As(&output1);
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] QI -> IDXGIOutput1 failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] QI -> IDXGIOutput1 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -346,11 +346,11 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
     // ── 步骤 4：创建桌面复制接口 ─────
     hr = output1->DuplicateOutput(m_device.Get(), m_duplication.GetAddressOf());
     if (hr == DXGI_ERROR_UNSUPPORTED) {
-        SX_LOG_ERROR("[DxgiCapturer] DuplicateOutput unsupported by current driver or display");
+        SX_LOG_ERROR("[DxgiCapturer] 当前驱动或显示器不支持 DuplicateOutput");
         return false;
     }
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] DuplicateOutput failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] DuplicateOutput 失败: HRESULT=0x{:08X}",
                      static_cast<unsigned>(hr));
         return false;
     }
@@ -371,7 +371,7 @@ bool DxgiCapturer::CreateDeviceAndDuplication() {
 
     hr = m_device->CreateTexture2D(&stagingDesc, nullptr, m_stagingTexture.GetAddressOf());
     if (FAILED(hr)) {
-        SX_LOG_ERROR("[DxgiCapturer] CreateTexture2D(staging {}x{}) failed: HRESULT=0x{:08X}",
+        SX_LOG_ERROR("[DxgiCapturer] CreateTexture2D(staging {}x{}) 失败: HRESULT=0x{:08X}",
                      m_roiWidth, m_roiHeight, static_cast<unsigned>(hr));
         return false;
     }

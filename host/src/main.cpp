@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     int         roiH       = (argc > 4) ? std::atoi(argv[4]) : 416;
 
     if (roiW < 64 || roiH < 64 || roiW > 4096 || roiH > 4096) {
-        SX_LOG_CRITICAL("[Host] Invalid ROI {}x{} (allowed range: 64..4096)", roiW, roiH);
+        SX_LOG_CRITICAL("[Host] 无效的 ROI {}x{}（允许范围: 64..4096）", roiW, roiH);
         return 1;
     }
 
@@ -93,12 +93,12 @@ int main(int argc, char* argv[]) {
     // 将其在不同核心间迁移 -- 避免 L1/L2 缓存抖动。
     DWORD_PTR affinityMask = 1ULL << 2;  // 核心 2（根据 CPU 拓扑调整）
     if (!SetThreadAffinityMask(GetCurrentThread(), affinityMask)) {
-        SX_LOG_WARN("[Host] SetThreadAffinityMask failed (error={})",
+        SX_LOG_WARN("[Host] SetThreadAffinityMask 失败 (error={})",
                     static_cast<unsigned long>(GetLastError()));
     }
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    SX_LOG_INFO("[Host] Main thread pinned to core 2 with TIME_CRITICAL priority");
-    SX_LOG_INFO("[Host] Starting fixed-rate pipeline: target={}Hz target={} target_port={} roi={}x{} raw_mb={:.2f} frame_budget_ms={:.3f}",
+    SX_LOG_INFO("[Host] 主线程已绑定到核心2，TIME_CRITICAL 优先级");
+    SX_LOG_INFO("[Host] 启动固定频率管线: target={}Hz target={} target_port={} roi={}x{} raw_mb={:.2f} frame_budget_ms={:.3f}",
                 kTargetFps,
                 targetIp,
                 targetPort,
@@ -110,26 +110,26 @@ int main(int argc, char* argv[]) {
     // ── 阶段 0：初始化所有模块 ────────────────────────
     SynapseX::DxgiCapturer capturer;
     if (!capturer.Initialize(roiW, roiH)) {
-        SX_LOG_CRITICAL("[Host] DxgiCapturer initialization failed");
+        SX_LOG_CRITICAL("[Host] DxgiCapturer 初始化失败");
         return 1;
     }
 
     SynapseX::Lz4Compressor compressor;
     if (!compressor.Initialize(rawSize)) {
-        SX_LOG_CRITICAL("[Host] Lz4Compressor initialization failed");
+        SX_LOG_CRITICAL("[Host] Lz4Compressor 初始化失败");
         return 1;
     }
 
     SynapseX::UdpSender sender;
     if (!sender.Initialize(targetIp, targetPort)) {
-        SX_LOG_CRITICAL("[Host] UdpSender initialization failed");
+        SX_LOG_CRITICAL("[Host] UdpSender 初始化失败");
         return 1;
     }
 
     // UDP 回复接收器（客户端 -> 主机端，端口 8889）
     SynapseX::UdpReplyReceiver replyReceiver;
     if (!replyReceiver.Initialize(8889)) {
-        SX_LOG_CRITICAL("[Host] UdpReplyReceiver initialization failed");
+        SX_LOG_CRITICAL("[Host] UdpReplyReceiver 初始化失败");
         return 1;
     }
     replyReceiver.SetRoiParams(roiW, roiH,
@@ -140,21 +140,21 @@ int main(int argc, char* argv[]) {
     SynapseX::MouseController mouse;
 
     if (!mouse.Load("ddll64.dll")) {
-        SX_LOG_WARN("[Host] MouseController unavailable; aim assist disabled. Check whether ddll64.dll is next to the executable");
+        SX_LOG_WARN("[Host] MouseController 不可用；自瞄已禁用。请检查 ddll64.dll 是否在可执行文件旁边");
     }
 
     // Web 调参面板（在后台线程中运行）
     SynapseX::HttpTuner tuner;
     if (!tuner.Start(9999)) {
-        SX_LOG_WARN("[Host] HttpTuner failed to start; web control panel unavailable");
+        SX_LOG_WARN("[Host] HttpTuner 启动失败；网页控制面板不可用");
     }
 
     int screenW = capturer.GetOutputWidth();
     int screenH = capturer.GetOutputHeight();
 
-    SX_LOG_INFO("[Host] All modules initialized; entering main loop");
-    SX_LOG_INFO("[Host] If capture fails in-game, try borderless windowed mode");
-    SX_LOG_INFO("[Host] Press Ctrl+C to stop");
+    SX_LOG_INFO("[Host] 所有模块已初始化；进入主循环");
+    SX_LOG_INFO("[Host] 如果游戏中采集失败，请尝试无边框窗口模式");
+    SX_LOG_INFO("[Host] 按 Ctrl+C 停止");
 
     // ── 诊断计数器 ──────────────────────────────
     int      zeroFrameCount = 0;
@@ -205,13 +205,13 @@ int main(int argc, char* argv[]) {
         if (pgupDown && !pgupWasDown) {
             if (!tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(true);
-                SX_LOG_INFO("[Host] Aim assist enabled via hotkey");
+                SX_LOG_INFO("[Host] 自瞄已通过热键启用");
             }
         }
         if (pgdnDown && !pgdnWasDown) {
             if (tuner.IsAimEnabled()) {
                 tuner.SetAimEnabled(false);
-                SX_LOG_INFO("[Host] Aim assist disabled via hotkey");
+                SX_LOG_INFO("[Host] 自瞄已通过热键禁用");
             }
         }
         pgupWasDown = pgupDown;
@@ -226,7 +226,7 @@ int main(int argc, char* argv[]) {
             // ── 诊断：检测全零帧 / 受保护帧 ──
             const auto& fi = capturer.GetLastFrameInfo();
             if (fi.ProtectedContentMaskedOut && !warnedProtected) {
-                SX_LOG_WARN("[Host] ProtectedContentMaskedOut detected; DRM or anti-cheat may be blocking capture. Try running the game in borderless windowed mode");
+                SX_LOG_WARN("[Host] 检测到受保护内容已屏蔽；DRM或反作弊可能正在阻止采集。请尝试以无边框窗口模式运行游戏");
                 warnedProtected = true;
             }
 
@@ -237,7 +237,7 @@ int main(int argc, char* argv[]) {
             if (allZero) {
                 zeroFrameCount++;
                 if (!warnedZero && zeroFrameCount > 10) {
-                    SX_LOG_WARN("[Host] Detected {} consecutive zero frames: screen={}x{} roi={}x{} protected={}. Exclusive fullscreen may be blocking capture",
+                    SX_LOG_WARN("[Host] 检测到连续{}个零帧：屏幕={}x{} ROI={}x{} 受保护={}。独占全屏可能正在阻止采集",
                                 zeroFrameCount,
                                 screenW,
                                 screenH,
@@ -298,7 +298,7 @@ int main(int argc, char* argv[]) {
 
                     static uint8_t lastModelId = 0xFF;
                     if (modelId != lastModelId) {
-                        SX_LOG_INFO("[Host] Active model switched to id={}",
+                        SX_LOG_INFO("[Host] 当前模型已切换到 id={}",
                                     static_cast<unsigned>(modelId));
                         lastModelId = modelId;
                     }
@@ -463,7 +463,7 @@ int main(int argc, char* argv[]) {
                                                   screenW, screenH, aimCfg)) {
                                 static int aimCount = 0;
                                 if (++aimCount % 30 == 1) {
-                                    SX_LOG_DEBUG("[Host] Aim target x={:.0f} y={:.0f} priority={} distance={:.0f}",
+                                    SX_LOG_DEBUG("[Host] 瞄准目标 x={:.0f} y={:.0f} 优先级={} 距离={:.0f}",
                                                  static_cast<double>(best->cx),
                                                  static_cast<double>(best->cy),
                                                  best->priority,
@@ -486,7 +486,7 @@ int main(int argc, char* argv[]) {
 
             double pipelineTotal = avgCapture + avgCompress + avgSend;
 
-            SX_LOG_DEBUG("[Host] Stats: send_fps={:.1f} capture_fps={:.1f} fresh_frames={} cached_frames={} total_sent={} capture_ms={:.3f} compress_ms={:.3f} send_ms={:.3f} pipeline_ms={:.3f} budget_ms={:.3f}",
+            SX_LOG_DEBUG("[Host] 统计：发送帧率={:.1f} 采集帧率={:.1f} 新帧数={} 缓存帧数={} 总发送数={} 采集耗时={:.3f} 压缩耗时={:.3f} 发送耗时={:.3f} 管线耗时={:.3f} 预算={:.3f}",
                          sendFps,
                          captureFps,
                          stats.captured,
@@ -522,7 +522,7 @@ int main(int argc, char* argv[]) {
     timeEndPeriod(1);
 
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
-    SX_LOG_INFO("[Host] Session ended: duration_s={:.1f} total_sent={} avg_fps={:.1f}",
+    SX_LOG_INFO("[Host] 会话已结束：时长={:.1f}秒 总发送数={} 平均帧率={:.1f}",
                 sessionSec,
                 static_cast<long long>(totalSent),
                 sessionSec > 0.0 ? totalSent / sessionSec : 0.0);

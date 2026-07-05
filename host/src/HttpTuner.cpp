@@ -86,8 +86,8 @@ bool HttpTuner::Start(uint16_t port) {
     // 短暂等待服务器绑定
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    SX_LOG_INFO("[HttpTuner] Control panel thread started on port {}", port);
-    SX_LOG_INFO("[HttpTuner] Open http://localhost:{} locally or http://<host-ip>:{} from another device",
+    SX_LOG_INFO("[HttpTuner] 控制面板线程已在端口 {}", port);
+    SX_LOG_INFO("[HttpTuner] 本地访问 http://localhost:{} 或从其他设备访问 http://<主机IP>:{}",
                 port, port);
     return true;
 }
@@ -100,7 +100,7 @@ void HttpTuner::Stop() {
         if (m_thread.joinable()) {
             m_thread.join();
         }
-        SX_LOG_INFO("[HttpTuner] Control panel stopped");
+        SX_LOG_INFO("[HttpTuner] 控制面板已停止");
     }
 }
 
@@ -119,7 +119,7 @@ void HttpTuner::ServerThread() {
                               std::istreambuf_iterator<char>());
             res.set_content(html, "text/html; charset=utf-8");
         } else {
-            SX_LOG_WARN("[HttpTuner] web/index.html not found; serving fallback text");
+            SX_LOG_WARN("[HttpTuner] web/index.html 未找到；提供回退文本");
             res.set_content("找不到 web/index.html。"
                             "请将其放在 exe 旁边或工作目录中。",
                             "text/plain");
@@ -198,7 +198,7 @@ void HttpTuner::ServerThread() {
         if (extractFloat(body, "aimPoint", f))      m_state.config.aimPoint      = (int)f;
         if (extractBool(body, "aimEnabled", b))     m_state.aimEnabled           = b;
 
-        SX_LOG_DEBUG("[HttpTuner] Config updated: Kp={:.3f}, Kd={:.3f}, aimRange={:.1f}, minConfidence={:.2f}, modelId={}, aimEnabled={}",
+        SX_LOG_DEBUG("[HttpTuner] 配置已更新: Kp={:.3f}, Kd={:.3f}, aimRange={:.1f}, minConfidence={:.2f}, modelId={}, aimEnabled={}",
                      m_state.config.Kp,
                      m_state.config.Kd,
                      m_state.config.aimRange,
@@ -210,9 +210,9 @@ void HttpTuner::ServerThread() {
 
     // ── 绑定并服务 ─────────────────────────────────
     svr.set_keep_alive_max_count(1);
-    SX_LOG_INFO("[HttpTuner] HTTP server binding to 0.0.0.0:{}", m_state.serverPort);
+    SX_LOG_INFO("[HttpTuner] HTTP 服务器正在绑定到 0.0.0.0:{}", m_state.serverPort);
     if (!svr.listen("0.0.0.0", m_state.serverPort)) {
-        SX_LOG_ERROR("[HttpTuner] HTTP server stopped or failed to bind on port {}",
+        SX_LOG_ERROR("[HttpTuner] HTTP 服务器已停止或无法绑定到端口 {}",
                      m_state.serverPort);
     }
 }

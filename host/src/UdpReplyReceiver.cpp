@@ -27,14 +27,14 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        SX_LOG_ERROR("[ReplyRecv] WSAStartup failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] WSAStartup 失败: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
 
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        SX_LOG_ERROR("[ReplyRecv] socket() failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] socket() 失败: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -54,13 +54,13 @@ bool UdpReplyReceiver::Initialize(uint16_t port) {
 
     if (bind(m_socket, reinterpret_cast<const sockaddr*>(&localAddr),
              sizeof(localAddr)) == SOCKET_ERROR) {
-        SX_LOG_ERROR("[ReplyRecv] bind(:{}) failed: {}", port, WSAGetLastError());
+        SX_LOG_ERROR("[ReplyRecv] bind(:{}) 失败: {}", port, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    SX_LOG_INFO("[ReplyRecv] Ready: listening on 0.0.0.0:{}", port);
+    SX_LOG_INFO("[ReplyRecv] 就绪: 监听 0.0.0.0:{}", port);
     return true;
 }
 
@@ -117,7 +117,7 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
         if (bytes == SOCKET_ERROR) {
             int err = WSAGetLastError();
             if (err == WSAEWOULDBLOCK) break;  // 没有更多数据
-            SX_LOG_ERROR("[ReplyRecv] recvfrom failed: {}", err);
+            SX_LOG_ERROR("[ReplyRecv] recvfrom 失败: {}", err);
             break;
         }
 
@@ -129,7 +129,7 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
 
         uint16_t numDets = header->numDets;
         if (numDets > MAX_DETS_PER_REPLY) {
-            SX_LOG_WARN("[ReplyRecv] numDets={} exceeds max {}, clamping",
+            SX_LOG_WARN("[ReplyRecv] numDets={} 超过最大值 {}，已截断",
                         numDets, MAX_DETS_PER_REPLY);
             numDets = MAX_DETS_PER_REPLY;
         }
@@ -137,7 +137,7 @@ bool UdpReplyReceiver::ReceiveReplies(std::vector<Detection>& outDetections,
         int expectedLen = static_cast<int>(
             sizeof(ReplyHeader) + numDets * sizeof(DetectionRaw));
         if (bytes < expectedLen) {
-            SX_LOG_WARN("[ReplyRecv] Truncated reply: received={} expected={}",
+            SX_LOG_WARN("[ReplyRecv] 截断的回复: 已接收={} 预期={}",
                         bytes, expectedLen);
             continue;
         }

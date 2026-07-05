@@ -62,7 +62,7 @@ bool SaveBgraAsBmp(const char* path,
 
     FILE* f = fopen(path, "wb");
     if (!f) {
-        SX_LOG_ERROR("[HostTest] Failed to open BMP output file: {}", path);
+        SX_LOG_ERROR("[HostTest] 无法打开 BMP 输出文件: {}", path);
         return false;
     }
 
@@ -92,7 +92,7 @@ bool SaveBgraAsBmp(const char* path,
 
 int main() {
     SynapseX::Log::Initialize("host_test", spdlog::level::debug, false);
-    SX_LOG_INFO("[HostTest] DXGI ROI capture test started");
+    SX_LOG_INFO("[HostTest] DXGI ROI 采集测试已启动");
 
     // ── 1. 初始化 ────────────────────────────────────
     SynapseX::DxgiCapturer capturer;
@@ -100,21 +100,21 @@ int main() {
     constexpr int ROI_H = 640;
 
     if (!capturer.Initialize(ROI_W, ROI_H)) {
-        SX_LOG_CRITICAL("[HostTest] DxgiCapturer initialization failed. Possible causes: no display attached, unsupported driver, or desktop duplication unavailable");
+        SX_LOG_CRITICAL("[HostTest] DxgiCapturer 初始化失败。可能原因：未连接显示器、驱动不支持或桌面复制不可用");
         return 1;
     }
 
-    SX_LOG_INFO("[HostTest] Display resolution={}x{} ROI={}x{}",
+    SX_LOG_INFO("[HostTest] 显示器分辨率={}x{} ROI={}x{}",
                 capturer.GetOutputWidth(), capturer.GetOutputHeight(),
                 ROI_W, ROI_H);
 
     // 计算预期的源区域用于诊断
     LONG srcLeft = (capturer.GetOutputWidth()  - ROI_W) / 2;
     LONG srcTop  = (capturer.GetOutputHeight() - ROI_H) / 2;
-    SX_LOG_INFO("[HostTest] Source rect: left={} top={} right={} bottom={}",
+    SX_LOG_INFO("[HostTest] 源矩形: 左={} 上={} 右={} 下={}",
                 srcLeft, srcTop, srcLeft + ROI_W, srcTop + ROI_H);
 
-    SX_LOG_INFO("[HostTest] Waiting for a new frame; move a window or the mouse to trigger desktop updates");
+    SX_LOG_INFO("[HostTest] 等待新帧；移动窗口或鼠标以触发桌面更新");
 
     // ── 2. 采集循环（等待真实帧）──────────────────────
     std::vector<uint8_t> buffer;
@@ -130,7 +130,7 @@ int main() {
             }
 
             const auto& info = capturer.GetLastFrameInfo();
-            SX_LOG_DEBUG("[HostTest] Attempt={} bytes={} last_present_time={} accumulated_frames={} metadata_bytes={} pointer=({}, {}) visible={} protected={} all_zero={}",
+            SX_LOG_DEBUG("[HostTest] 尝试={} 字节={} 上次呈现时间={} 累计帧数={} 元数据字节={} 指针=({}, {}) 可见={} 受保护={} 全零={}",
                          attempt,
                          buffer.size(),
                          static_cast<long long>(info.LastPresentTime.QuadPart),
@@ -144,7 +144,7 @@ int main() {
 
             if (!allZero) {
                 captured = true;
-                SX_LOG_INFO("[HostTest] Captured a non-zero frame on attempt {}", attempt);
+                SX_LOG_INFO("[HostTest] 在第 {} 次尝试中采集到非零帧", attempt);
                 break;
             }
         }
@@ -152,7 +152,7 @@ int main() {
     }
 
     if (!captured) {
-        SX_LOG_ERROR("[HostTest] All {} capture attempts returned black frames. Check remote desktop, virtual displays, physical monitor/GPU connection, and ProtectedContentMaskedOut diagnostics",
+        SX_LOG_ERROR("[HostTest] 全部 {} 次采集尝试均返回黑帧。请检查远程桌面、虚拟显示器、物理显示器/GPU连接以及 ProtectedContentMaskedOut 诊断信息",
                      kMaxAttempts);
         return 1;
     }
@@ -160,33 +160,33 @@ int main() {
     // ── 3. 保存 BMP ────────────────────────────────────
     const char* outPath = "test_roi.bmp";
     if (!SaveBgraAsBmp(outPath, buffer.data(), ROI_W, ROI_H)) {
-        SX_LOG_CRITICAL("[HostTest] Failed to write BMP output");
+        SX_LOG_CRITICAL("[HostTest] 无法写入 BMP 输出");
         return 1;
     }
 
-    SX_LOG_INFO("[HostTest] Saved BMP: path={} size={}x{} bytes={}",
+    SX_LOG_INFO("[HostTest] 已保存 BMP: 路径={} 尺寸={}x{} 字节={}",
                 outPath, ROI_W, ROI_H, buffer.size());
 
     // 显示前几个像素供人工验证
     if (buffer.size() >= 16) {
         const uint8_t* p = buffer.data();
-        SX_LOG_DEBUG("[HostTest] First 4 pixels BGRA: [{},{},{},{}] [{},{},{},{}] [{},{},{},{}] [{},{},{},{}]",
+        SX_LOG_DEBUG("[HostTest] 前4个像素 BGRA: [{},{},{},{}] [{},{},{},{}] [{},{},{},{}] [{},{},{},{}]",
                      p[0],p[1],p[2],p[3], p[4],p[5],p[6],p[7],
                      p[8],p[9],p[10],p[11], p[12],p[13],p[14],p[15]);
     }
 
     // ── 4. LZ4 压缩测试 ────────────────────────────────
-    SX_LOG_INFO("[HostTest] Starting LZ4 compression test");
+    SX_LOG_INFO("[HostTest] 开始 LZ4 压缩测试");
 
     const int rawSize = static_cast<int>(buffer.size());
 
     // 初始化压缩器（预分配内部缓冲区）
     SynapseX::Lz4Compressor compressor;
     if (!compressor.Initialize(rawSize)) {
-        SX_LOG_CRITICAL("[HostTest] LZ4 compressor initialization failed");
+        SX_LOG_CRITICAL("[HostTest] LZ4 压缩器初始化失败");
         return 1;
     }
-    SX_LOG_INFO("[HostTest] LZ4 compressor ready: max_input={} max_output={}",
+    SX_LOG_INFO("[HostTest] LZ4 压缩器就绪: 最大输入={} 最大输出={}",
                 compressor.GetMaxInputSize(),
                 SynapseX::Lz4Compressor::GetMaxOutputSize(rawSize));
 
@@ -195,7 +195,7 @@ int main() {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     if (!compressor.Compress(buffer.data(), rawSize, compressed)) {
-        SX_LOG_CRITICAL("[HostTest] LZ4 compression failed");
+        SX_LOG_CRITICAL("[HostTest] LZ4 压缩失败");
         return 1;
     }
 
@@ -211,8 +211,8 @@ int main() {
         ? (rawSize / (1024.0 * 1024.0)) / (compressMs / 1000.0)
         : 0.0;
 
-    SX_LOG_INFO("[HostTest] LZ4 result: raw_bytes={} compressed_bytes={} ratio={:.1f}% compress_ms={:.3f} throughput_mb_s={:.1f}",
+    SX_LOG_INFO("[HostTest] LZ4 结果: 原始字节={} 压缩字节={} 压缩率={:.1f}% 压缩耗时={:.3f} 吞吐量MB/s={:.1f}",
                 rawSize, compressedSize, ratio, compressMs, throughputMBps);
-    SX_LOG_INFO("[HostTest] All tests passed");
+    SX_LOG_INFO("[HostTest] 所有测试通过");
     return 0;
 }
