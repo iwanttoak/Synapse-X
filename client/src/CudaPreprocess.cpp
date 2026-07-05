@@ -79,7 +79,7 @@ bool InitCudaPreprocess() {
     nvrtcResult nvr = nvrtcCreateProgram(&prog, kKernelSource,
         "Bgra8ToFp32ChwRgbKernel", 0, nullptr, nullptr);
     if (nvr != NVRTC_SUCCESS) {
-        SX_LOG_ERROR("[CudaPreprocess] nvrtcCreateProgram failed: {}",
+        SX_LOG_ERROR("[CudaPreprocess] nvrtcCreateProgram 失败: {}",
                      nvrtcGetErrorString(nvr));
         return false;
     }
@@ -100,11 +100,11 @@ bool InitCudaPreprocess() {
     if (logSize > 1) {
         s_buildLog.resize(logSize);
         nvrtcGetProgramLog(prog, &s_buildLog[0]);
-        SX_LOG_DEBUG("[CudaPreprocess] NVRTC build log:\n{}", s_buildLog);
+        SX_LOG_DEBUG("[CudaPreprocess] NVRTC 构建日志:\n{}", s_buildLog);
     }
 
     if (nvr != NVRTC_SUCCESS) {
-        SX_LOG_ERROR("[CudaPreprocess] nvrtcCompileProgram failed: {}",
+        SX_LOG_ERROR("[CudaPreprocess] nvrtcCompileProgram 失败: {}",
                      nvrtcGetErrorString(nvr));
         nvrtcDestroyProgram(&prog);
         return false;
@@ -117,7 +117,7 @@ bool InitCudaPreprocess() {
     nvrtcGetPTX(prog, ptx.data());
     nvrtcDestroyProgram(&prog);
 
-    SX_LOG_INFO("[CudaPreprocess] Kernel compiled via NVRTC: ptx_bytes={}", ptxSize);
+    SX_LOG_INFO("[CudaPreprocess] 内核已通过 NVRTC 编译: ptx字节={}", ptxSize);
 
     // ── 5. 将 PTX 加载到 CUDA 模块中 ──────────────────────
     CUresult cu = cuModuleLoadData(&s_module, ptx.data());
@@ -137,7 +137,7 @@ bool InitCudaPreprocess() {
     }
 
     s_initialized = true;
-    SX_LOG_INFO("[CudaPreprocess] Ready: runtime NVRTC kernel available");
+    SX_LOG_INFO("[CudaPreprocess] 就绪: 运行时 NVRTC 内核可用");
     return true;
 }
 
@@ -153,7 +153,7 @@ void LaunchBgra8ToFp32ChwRgb(
     cudaStream_t   stream)
 {
     if (!s_initialized) {
-        SX_LOG_ERROR("[CudaPreprocess] Not initialized; call InitCudaPreprocess() first");
+        SX_LOG_ERROR("[CudaPreprocess] 未初始化；请先调用 InitCudaPreprocess()");
         return;
     }
 

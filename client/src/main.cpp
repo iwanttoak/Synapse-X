@@ -63,10 +63,10 @@ static void PinThreadToCore(int core) {
     DWORD_PTR mask = 1ULL << static_cast<DWORD_PTR>(core);
     DWORD_PTR old = SetThreadAffinityMask(GetCurrentThread(), mask);
     if (old == 0) {
-        SX_LOG_WARN("[Client] SetThreadAffinityMask(core={}) failed: {}",
+        SX_LOG_WARN("[Client] SetThreadAffinityMask(core={}) 失败: {}",
                     core, GetLastError());
     } else {
-        SX_LOG_INFO("[Client] Thread pinned to core {} (mask=0x{:X})",
+        SX_LOG_INFO("[Client] 线程已绑定到核心 {} (掩码=0x{:X})",
                     core, static_cast<unsigned long long>(mask));
     }
 }
@@ -150,7 +150,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     // ── 设置CUDA设备（必须在此线程上执行）───────────────
     cudaError_t devErr = cudaSetDevice(0);
     if (devErr != cudaSuccess) {
-        SX_LOG_ERROR("[Client] Consumer cudaSetDevice(0) failed: {}",
+        SX_LOG_ERROR("[Client] Consumer cudaSetDevice(0) 失败: {}",
                      cudaGetErrorString(devErr));
         return;
     }
@@ -158,7 +158,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     // ── 创建专用的CUDA流 ─────────────────────────────────
     if (ctx->trtReady) {
         if (!ctx->trt->SetupStream()) {
-            SX_LOG_ERROR("[Client] Consumer SetupStream failed");
+            SX_LOG_ERROR("[Client] Consumer SetupStream 失败");
             ctx->trtReady = false;
         }
     }
@@ -166,7 +166,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     // ── 初始化GPU预处理（NVRTC，运行时编译内核）────────
     if (ctx->trtReady) {
         if (!SynapseX::InitCudaPreprocess()) {
-            SX_LOG_ERROR("[Client] Consumer InitCudaPreprocess failed");
+            SX_LOG_ERROR("[Client] Consumer InitCudaPreprocess 失败");
             ctx->trtReady = false;
         }
     }
@@ -175,7 +175,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     if (ctx->trtReady) {
         uint8_t initModel = g_targetModelId.load(std::memory_order_relaxed);
         if (!ctx->trt->LoadEngine(initModel)) {
-            SX_LOG_ERROR("[Client] Consumer LoadEngine({}) failed; inference disabled until a valid model id arrives",
+            SX_LOG_ERROR("[Client] Consumer LoadEngine({}) 失败；推理已禁用，等待有效模型ID",
                          initModel);
             ctx->trtReady = false;
         }
@@ -183,7 +183,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
 
     // ── 预热：50 帧黑色哑元帧 ───────────────────────────
     if (ctx->trtReady) {
-        SX_LOG_INFO("[Client] Consumer warming up GPU with 50 dummy frames");
+        SX_LOG_INFO("[Client] Consumer 正在用50帧黑图预热GPU");
         std::vector<uint8_t> black(
             ctx->trt->GetModelWidth() * ctx->trt->GetModelHeight() * 4, 0);
         for (int i = 0; i < 50 && g_running; ++i) {
@@ -191,7 +191,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
         }
         // CUDA 同步以确保预热完成
         cudaDeviceSynchronize();
-        SX_LOG_INFO("[Client] Consumer warmup complete");
+        SX_LOG_INFO("[Client] Consumer 预热完成");
     }
 
     // ═══════════════════════════════════════════════════════
@@ -264,14 +264,14 @@ static void ConsumerThread(ConsumerCtx* ctx) {
                     case 5: gameName="PUBG";    clsNames=kPubgCls;    numCls=2; break;
                     default: gameName="?";      clsNames=nullptr;     numCls=0; break;
                 }
-                SX_LOG_DEBUG("[Client] Inference frame={} host_frame={} model={} detections={}",
+                SX_LOG_DEBUG("[Client] 推理帧={} 主机帧={} 模型={} 检测数={}",
                              static_cast<unsigned long long>(localFrameCount),
                              fid, gameName, dets.size());
                 int show = std::min(static_cast<int>(dets.size()), 3);
                 for (int i = 0; i < show; ++i) {
                     int cls = dets[i].classId;
                     const char* cn = (cls >= 0 && cls < numCls) ? clsNames[cls] : "?";
-                    SX_LOG_DEBUG("[Client]   det class={} conf={:.2f} box=[{:.0f},{:.0f},{:.0f},{:.0f}]",
+                    SX_LOG_DEBUG("[Client]   检测 class={} 置信度={:.2f} 框=[{:.0f},{:.0f},{:.0f},{:.0f}]",
                                  cn, dets[i].confidence,
                                  dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
                 }
@@ -282,7 +282,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
     }
 
     cudaDeviceSynchronize();
-    SX_LOG_INFO("[Client] Consumer exiting after {} inferred frames",
+    SX_LOG_INFO("[Client] Consumer 退出，共推理 {} 帧",
                 static_cast<unsigned long long>(localFrameCount));
 }
 
@@ -305,26 +305,26 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[i], "--save") == 0) saveBmp = true;
     }
 
-    SX_LOG_INFO("[Client] Starting async pipeline: listen=0.0.0.0:{} engine_path={} reply_target={}:8889 save_bmp={}",
+    SX_LOG_INFO("[Client] 启动异步管线: 监听=0.0.0.0:{} 引擎路径={} 回复目标={}:8889 保存BMP={}",
                 listenPort, enginePath, hostIp, saveBmp);
 
     // ── 初始化模块（主线程） ────────────────────────────
     SynapseX::UdpReceiver receiver;
     if (!receiver.Initialize(listenPort)) {
-        SX_LOG_CRITICAL("[Client] UdpReceiver initialization failed");
+        SX_LOG_CRITICAL("[Client] UdpReceiver 初始化失败");
         return 1;
     }
 
     SynapseX::TrtInference trt;
     bool trtReady = trt.Initialize();
     if (!trtReady) {
-        SX_LOG_WARN("[Client] TRT inference not available; running in receive-only mode");
+        SX_LOG_WARN("[Client] TRT 推理不可用；以仅接收模式运行");
     }
 
     SynapseX::UdpReplySender replySender;
     bool replyReady = replySender.Initialize(hostIp, 8889);
     if (!replyReady) {
-        SX_LOG_WARN("[Client] Reply sender initialization failed");
+        SX_LOG_WARN("[Client] 回复发送器初始化失败");
     }
 
     // ── LIFO 帧槽（在线程间共享） ──────────────────────
@@ -342,14 +342,14 @@ int main(int argc, char* argv[]) {
     consumerCtx.sumInferMs   = 0.0;
 
     // ── 创建消费者线程 ──────────────────────────────────
-    SX_LOG_INFO("[Client] Spawning consumer thread on core 1");
+    SX_LOG_INFO("[Client] 在核心1上创建消费者线程");
     std::thread consumer(ConsumerThread, &consumerCtx);
 
     // ── 将生产者（主线程）绑定到核心 0 ─────────────────
     PinThreadToCore(0);
 
-    SX_LOG_INFO("[Client] Producer pinned to core 0 and waiting for host data");
-    SX_LOG_INFO("[Client] Press Ctrl+C to stop");
+    SX_LOG_INFO("[Client] Producer 已绑定到核心0，等待主机数据");
+    SX_LOG_INFO("[Client] 按 Ctrl+C 停止");
 
     // ── 生产者状态 ─────────────────────────────────────
     std::vector<uint8_t> frameBuffer;
@@ -461,7 +461,7 @@ int main(int argc, char* argv[]) {
             uint16_t roiH = receiver.GetLastFrameHeight();
 
             if (packetsThisSec > 0 || framesThisSec > 0) {
-                SX_LOG_DEBUG("[Client] Stats: roi={}x{} fps={:.1f} frames={} dropped={} drop_rate={:.1f}% lifo_drops={} recv_ms={:.2f} infer_ms={:.2f} total_ms={:.2f} infer_per_sec={} bandwidth_mb_s={:.2f}",
+                SX_LOG_DEBUG("[Client] 统计: ROI={}x{} 帧率={:.1f} 帧数={} 丢弃={} 丢弃率={:.1f}% LIFO丢弃={} 接收耗时={:.2f} 推理耗时={:.2f} 总耗时={}0 每秒推理={}1 带宽MB/s={:.2f}",
                              roiW, roiH, fps,
                              static_cast<unsigned long long>(framesThisSec),
                              static_cast<unsigned long long>(droppedThisSec),
@@ -486,13 +486,13 @@ int main(int argc, char* argv[]) {
     }
 
     // ── 关闭 ─────────────────────────────────────────────
-    SX_LOG_INFO("[Client] Shutting down");
+    SX_LOG_INFO("[Client] 正在关闭");
     slot.cv.notify_all();
     consumer.join();
 
     // ── 最终报告 ─────────────────────────────────────────
     double sessionSec = ToMs(Clock::now() - sessionStart) / 1000.0;
-    SX_LOG_INFO("[Client] Session summary: duration_s={:.1f} producer_frames={} consumer_frames={} lifo_overwrites={} dropped_frames={} packets={} received_mb={:.2f} avg_fps={:.1f} saved_bmps={}",
+    SX_LOG_INFO("[Client] 会话摘要: 时长={:.1f}秒 生产者帧={} 消费者帧={} LIFO覆盖={} 丢弃帧={} 数据包={} 接收MB={:.2f} 平均帧率={:.1f} 保存BMP={}",
                 sessionSec,
                 static_cast<unsigned long long>(producerFrames),
                 static_cast<unsigned long long>(

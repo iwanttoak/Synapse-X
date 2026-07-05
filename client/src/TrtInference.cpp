@@ -61,14 +61,14 @@ private:
 static std::vector<char> LoadFile(const std::string& path) {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) {
-        SX_LOG_ERROR("[TrtInference] Cannot open engine file: {}", path);
+        SX_LOG_ERROR("[TrtInference] 无法打开引擎文件: {}", path);
         return {};
     }
     size_t size = f.tellg();
     f.seekg(0);
     std::vector<char> data(size);
     f.read(data.data(), size);
-    SX_LOG_DEBUG("[TrtInference] Loaded engine file: path={} size_mb={:.1f}",
+    SX_LOG_DEBUG("[TrtInference] 已加载引擎文件: 路径={} 大小MB={:.1f}",
                  path, size / 1048576.0);
     return data;
 }
@@ -93,7 +93,7 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
         case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs，1类：敌人
         case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG，2类：身体，头部
         default:
-            SX_LOG_ERROR("[TrtInference] Unknown modelId={} (valid range: 0..5)", modelId);
+            SX_LOG_ERROR("[TrtInference] 未知的 modelId={} (有效范围: 0..5)", modelId);
             return "";
     }
 }
@@ -111,12 +111,12 @@ bool TrtInference::Initialize() {
 
     auto* runtime = nvinfer1::createInferRuntime(TrtLogger::Instance());
     if (!runtime) {
-        SX_LOG_ERROR("[TrtInference] createInferRuntime failed");
+        SX_LOG_ERROR("[TrtInference] createInferRuntime 失败");
         return false;
     }
     m_runtime = runtime;
     m_initialized = true;
-    SX_LOG_INFO("[TrtInference] Runtime ready; waiting for engine load");
+    SX_LOG_INFO("[TrtInference] 运行时已就绪；等待引擎加载");
     return true;
 }
 
@@ -157,7 +157,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     auto* engine = static_cast<nvinfer1::IRuntime*>(m_runtime)
         ->deserializeCudaEngine(engineData.data(), engineData.size());
     if (!engine) {
-        SX_LOG_ERROR("[TrtInference] deserializeCudaEngine failed for {}", path);
+        SX_LOG_ERROR("[TrtInference] deserializeCudaEngine 失败:  {}", path);
         return false;
     }
     m_engine = engine;
@@ -165,7 +165,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     // ── 3. 创建执行上下文 ───────────────────────────────────
     auto* ctx = engine->createExecutionContext();
     if (!ctx) {
-        SX_LOG_ERROR("[TrtInference] createExecutionContext failed");
+        SX_LOG_ERROR("[TrtInference] createExecutionContext 失败");
         return false;
     }
     m_context = ctx;
@@ -185,7 +185,7 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
         void* devPtr = nullptr;
         cudaError_t err = cudaMalloc(&devPtr, bytes);
         if (err != cudaSuccess) {
-            SX_LOG_ERROR("[TrtInference] cudaMalloc failed for tensor '{}': {}",
+            SX_LOG_ERROR("[TrtInference] cudaMalloc 失败 (张量 '{}': {}",
                          name, cudaGetErrorString(err));
             UnloadEngine();
             return false;
@@ -205,13 +205,13 @@ bool TrtInference::LoadEngineFile(const std::string& path) {
     size_t bgraBytes = static_cast<size_t>(m_modelW) * m_modelH * 4;
     cudaError_t cudaErr = cudaMalloc(&m_dBgraInput, bgraBytes);
     if (cudaErr != cudaSuccess) {
-        SX_LOG_ERROR("[TrtInference] cudaMalloc for BGRA input failed: {}",
+        SX_LOG_ERROR("[TrtInference] BGRA 输入 cudaMalloc 失败: {}",
                      cudaGetErrorString(cudaErr));
         UnloadEngine();
         return false;
     }
 
-    SX_LOG_INFO("[TrtInference] Engine loaded: path={} input={}x{} output_bytes={}",
+    SX_LOG_INFO("[TrtInference] 引擎已加载: 路径={} 输入={}x{} 输出字节={}",
                 path, m_modelW, m_modelH, m_outputBytes);
     return true;
 }
@@ -230,7 +230,7 @@ bool TrtInference::LoadEngine(uint8_t modelId) {
     UnloadEngine();
 
     if (!LoadEngineFile(path)) {
-        SX_LOG_ERROR("[TrtInference] LoadEngine({}) failed", modelId);
+        SX_LOG_ERROR("[TrtInference] LoadEngine({}) 失败", modelId);
         return false;
     }
 
@@ -262,11 +262,11 @@ bool TrtInference::SetupStream() {
         reinterpret_cast<cudaStream_t*>(&m_stream),
         cudaStreamNonBlocking);
     if (err != cudaSuccess) {
-        SX_LOG_ERROR("[TrtInference] cudaStreamCreateWithFlags failed: {}",
+        SX_LOG_ERROR("[TrtInference] cudaStreamCreateWithFlags 失败: {}",
                      cudaGetErrorString(err));
         return false;
     }
-    SX_LOG_INFO("[TrtInference] CUDA stream created (non-blocking)");
+    SX_LOG_INFO("[TrtInference] CUDA 流已创建 (非阻塞)");
     return true;
 }
 
@@ -287,7 +287,7 @@ std::vector<Detection> TrtInference::Infer(
     // ═══════════════════════════════════════════════════════════
     uint8_t targetId = g_targetModelId.load(std::memory_order_relaxed);
     if (m_currentModelId != targetId) {
-        SX_LOG_INFO("[TrtInference] Model switch requested: {} -> {}",
+        SX_LOG_INFO("[TrtInference] 请求模型切换: {} -> {}",
                     m_currentModelId, targetId);
 
         // 1. 同步流 — 确保前一帧的GPU工作已完成
@@ -299,14 +299,14 @@ std::vector<Detection> TrtInference::Infer(
         // 3. 加载新引擎
         std::string path = GetModelPath(targetId);
         if (path.empty() || !LoadEngineFile(path)) {
-            SX_LOG_ERROR("[TrtInference] Hot-swap failed for modelId={}; inference disabled until a valid modelId arrives",
+            SX_LOG_ERROR("[TrtInference] 热切换失败 (modelId={})；推理已禁用，等待有效模型ID",
                          targetId);
             m_currentModelId = 255;  // 强制重试
             return detections;
         }
 
         m_currentModelId = targetId;
-        SX_LOG_INFO("[TrtInference] Hot-swap succeeded: modelId={} path={}",
+        SX_LOG_INFO("[TrtInference] 热切换成功: modelId={} 路径={}",
                     targetId, path);
 
         // 4. 返回空结果 — 丢弃过时帧（旧图像 ≠ 新模型）
@@ -336,7 +336,7 @@ std::vector<Detection> TrtInference::Infer(
     auto* ctx = static_cast<nvinfer1::IExecutionContext*>(m_context);
     bool ok = ctx->enqueueV3(stream);
     if (!ok) {
-        SX_LOG_ERROR("[TrtInference] enqueueV3 failed");
+        SX_LOG_ERROR("[TrtInference] enqueueV3 失败");
         cudaStreamSynchronize(stream);
         return detections;
     }

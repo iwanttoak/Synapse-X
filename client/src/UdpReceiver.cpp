@@ -38,7 +38,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
     // ── WinSock 启动 ────────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        SX_LOG_ERROR("[UdpReceiver] WSAStartup failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpReceiver] WSAStartup 失败: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
@@ -46,7 +46,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
     // ── 创建UDP套接字 ──────────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        SX_LOG_ERROR("[UdpReceiver] socket() failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpReceiver] socket() 失败: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -56,7 +56,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
     // 而不会在 recvfrom 上阻塞。
     u_long nonBlocking = 1;
     if (ioctlsocket(m_socket, FIONBIO, &nonBlocking) != 0) {
-        SX_LOG_ERROR("[UdpReceiver] ioctlsocket(FIONBIO) failed: {}",
+        SX_LOG_ERROR("[UdpReceiver] ioctlsocket(FIONBIO) 失败: {}",
                      WSAGetLastError());
         Cleanup();
         return false;
@@ -75,7 +75,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
 
     if (bind(m_socket, reinterpret_cast<const sockaddr*>(&localAddr),
              sizeof(localAddr)) == SOCKET_ERROR) {
-        SX_LOG_ERROR("[UdpReceiver] bind(:{}) failed: {}", port, WSAGetLastError());
+        SX_LOG_ERROR("[UdpReceiver] bind(:{}) 失败: {}", port, WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -84,7 +84,7 @@ bool UdpReceiver::Initialize(uint16_t port) {
     // 根据 PacketHeader 的宽度/高度惰性增长。
 
     m_initialized = true;
-    SX_LOG_INFO("[UdpReceiver] Ready: listening on 0.0.0.0:{}, recv_buffer={}KB, nonblocking=true, dynamic_roi=true",
+    SX_LOG_INFO("[UdpReceiver] 就绪: 监听 0.0.0.0:{} 接收缓冲区={}KB 非阻塞=true 动态ROI=true",
                 port, bufSize / 1024);
     return true;
 }
@@ -117,7 +117,7 @@ bool UdpReceiver::TryReceive(std::vector<uint8_t>& outFrame,
                 break;
             }
             // 真实错误（稳态下不太可能）
-            SX_LOG_ERROR("[UdpReceiver] recvfrom failed: {}", err);
+            SX_LOG_ERROR("[UdpReceiver] recvfrom 失败: {}", err);
             break;
         }
 
@@ -167,7 +167,7 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
 
     // 安全检查：负载必须适合收到的数据报
     if (static_cast<int>(sizeof(PacketHeader) + payloadSize) > len) {
-        SX_LOG_WARN("[UdpReceiver] Truncated datagram: payload_size={} total_bytes={}",
+        SX_LOG_WARN("[UdpReceiver] 截断的数据报: 载荷大小={} 总字节数={}",
                     payloadSize, len);
         return false;
     }
@@ -270,12 +270,12 @@ bool UdpReceiver::DecompressCurrentFrame(std::vector<uint8_t>& outFrame) {
     const int expectedSize = static_cast<int>(rawSize);
     if (result != expectedSize) {
         if (result < 0) {
-            SX_LOG_ERROR("[UdpReceiver] LZ4_decompress_safe failed: result={} compressed_bytes={} raw={}x{}x4={} frame_id={}",
+            SX_LOG_ERROR("[UdpReceiver] LZ4_decompress_safe 失败: 结果={} 压缩字节={} 原始={}x{}x4={} 帧ID={}",
                          result, compressedSize,
                          m_buffer.frameWidth, m_buffer.frameHeight, rawSize,
                          m_buffer.expectedFrameId);
         } else {
-            SX_LOG_ERROR("[UdpReceiver] LZ4 size mismatch: got={} expected={} raw={}x{}x4={} compressed_bytes={} frame_id={}",
+            SX_LOG_ERROR("[UdpReceiver] LZ4 大小不匹配: 得到={} 预期={} 原始={}x{}x4={} 压缩字节={} 帧ID={}",
                          result, expectedSize,
                          m_buffer.frameWidth, m_buffer.frameHeight, rawSize,
                          compressedSize, m_buffer.expectedFrameId);

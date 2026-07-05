@@ -32,7 +32,7 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     // ── WinSock 启动 ────────────────────────────────────
     WSADATA wsaData = {};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        SX_LOG_ERROR("[UdpReplySender] WSAStartup failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpReplySender] WSAStartup 失败: {}", WSAGetLastError());
         return false;
     }
     m_wsaStarted = true;
@@ -40,7 +40,7 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     // ── 创建UDP套接字 ──────────────────────────────────────
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET) {
-        SX_LOG_ERROR("[UdpReplySender] socket() failed: {}", WSAGetLastError());
+        SX_LOG_ERROR("[UdpReplySender] socket() 失败: {}", WSAGetLastError());
         Cleanup();
         return false;
     }
@@ -60,14 +60,14 @@ bool UdpReplySender::Initialize(const std::string& hostIp, uint16_t port) {
     m_targetAddr.sin_port   = htons(port);
 
     if (inet_pton(AF_INET, hostIp.c_str(), &m_targetAddr.sin_addr) != 1) {
-        SX_LOG_ERROR("[UdpReplySender] inet_pton failed for '{}': {}",
+        SX_LOG_ERROR("[UdpReplySender] inet_pton 失败 ('{}': {}",
                      hostIp, WSAGetLastError());
         Cleanup();
         return false;
     }
 
     m_initialized = true;
-    SX_LOG_INFO("[UdpReplySender] Ready: sending to {}:{}", hostIp, port);
+    SX_LOG_INFO("[UdpReplySender] 就绪: 发送到 {}:{}", hostIp, port);
     return true;
 }
 
@@ -117,7 +117,7 @@ bool UdpReplySender::SendReplies(uint32_t frameId,
     if (sent == SOCKET_ERROR) {
         int err = WSAGetLastError();
         if (err != WSAEWOULDBLOCK) {
-            SX_LOG_ERROR("[UdpReplySender] sendto failed: {}", err);
+            SX_LOG_ERROR("[UdpReplySender] sendto 失败: {}", err);
         }
         return false;
     }

@@ -48,13 +48,13 @@ static bool SaveBgraBmp(const char* path, const uint8_t* px, int w, int h) {
 int main(int argc, char* argv[]) {
     SynapseX::Log::Initialize("client_test", spdlog::level::debug, false);
     if (argc < 3) {
-        SX_LOG_ERROR("Usage: test_infer.exe <engine> <image>");
-        SX_LOG_ERROR("Example: test_infer.exe ../model/engine/delta_body_head_416.engine ../image/delta.jpg");
+        SX_LOG_ERROR("用法: test_infer.exe <引擎> <图片>");
+        SX_LOG_ERROR("示例: test_infer.exe ../model/engine/delta_body_head_416.engine ../image/delta.jpg");
         return 1;
     }
     std::string enginePath(argv[1]);
     std::string imagePath(argv[2]);
-    SX_LOG_INFO("Engine: {} Image: {}", enginePath, imagePath);
+    SX_LOG_INFO("引擎: {} 图片: {}", enginePath, imagePath);
 
     // ── 1. Load & resize image → 416×416 BGRA ────────────
     int wcharLen = MultiByteToWideChar(CP_UTF8, 0, imagePath.c_str(), -1, nullptr, 0);
@@ -63,41 +63,41 @@ int main(int argc, char* argv[]) {
 
     std::vector<uint8_t> bgra;
     if (!TestUtils::LoadAndResize(wpath.data(), 416, 416, bgra)) {
-        SX_LOG_CRITICAL("Cannot load image: {}", imagePath);
+        SX_LOG_CRITICAL("无法加载图片: {}", imagePath);
         return 1;
     }
-    SX_LOG_INFO("Image loaded: {} bytes (416x416 BGRA)", bgra.size());
+    SX_LOG_INFO("图片已加载: {} 字节 (416x416 BGRA)", bgra.size());
 
     // ── 2. GPU init ──────────────────────────────────────
     cudaSetDevice(0);
     SynapseX::TrtInference trt;
     if (!trt.Initialize()) {
-        SX_LOG_CRITICAL("TRT init failed");
+        SX_LOG_CRITICAL("TRT 初始化失败");
         return 1;
     }
     if (!trt.LoadEngineByPath(enginePath)) {
-        SX_LOG_CRITICAL("Engine load failed");
+        SX_LOG_CRITICAL("引擎加载失败");
         return 1;
     }
     if (!trt.SetupStream()) {
-        SX_LOG_CRITICAL("Stream setup failed");
+        SX_LOG_CRITICAL("流设置失败");
         return 1;
     }
 
     // Init GPU preprocess (NVRTC — required before Infer!)
     if (!SynapseX::InitCudaPreprocess()) {
-        SX_LOG_CRITICAL("InitCudaPreprocess failed");
+        SX_LOG_CRITICAL("InitCudaPreprocess 失败");
         return 1;
     }
 
     // Warmup
-    SX_LOG_INFO("Warming up with 10 dummy frames");
+    SX_LOG_INFO("正在用10帧黑图预热");
     std::vector<uint8_t> black(416 * 416 * 4, 0);
     for (int i = 0; i < 10; ++i) trt.Infer(black.data(), 0.9f);
     cudaDeviceSynchronize();
 
     // ── 3. Inference ─────────────────────────────────────
-    SX_LOG_INFO("Running inference");
+    SX_LOG_INFO("正在运行推理");
     auto dets = trt.Infer(bgra.data(), 0.25f);
 
     // ── 4. Output ────────────────────────────────────────
@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
     size_t pos = gameName.find("_416");
     if (pos != std::string::npos) gameName = gameName.substr(0, pos);
 
-    SX_LOG_INFO("Game: {} Detections: {}", gameName, dets.size());
+    SX_LOG_INFO("游戏: {} 检测数: {}", gameName, dets.size());
 
     // Class names per model
     const char** classNames = nullptr;
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
             cn = classNames[dets[i].classId % (gameName.find("delta") != std::string::npos ? 2 :
                                                 gameName.find("bf6") != std::string::npos ? 2 : 1)];
         }
-        SX_LOG_DEBUG("Detection [{}] conf={:.3f} box=[{:.1f}, {:.1f}, {:.1f}, {:.1f}]",
+        SX_LOG_DEBUG("检测 [{}] 置信度={:.3f} 框=[{:.1f}, {:.1f}, {:.1f}, {:.1f}]",
                      cn, dets[i].confidence,
                      dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
     }
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
                     dets[i].x1, dets[i].y1, dets[i].x2, dets[i].y2);
         }
         fclose(tf);
-        SX_LOG_INFO("Saved detection text: {}", txtPath);
+        SX_LOG_INFO("已保存检测文本: {}", txtPath);
     }
 
     // Draw boxes & save BMP (convert Detection to raw arrays)
@@ -177,10 +177,10 @@ int main(int argc, char* argv[]) {
     char bmpPath[512];
     snprintf(bmpPath, sizeof(bmpPath), "./result/%s_boxes.bmp", gameName.c_str());
     if (SaveBgraBmp(bmpPath, bgra.data(), 416, 416)) {
-        SX_LOG_INFO("Saved annotated image: {}", bmpPath);
+        SX_LOG_INFO("已保存标注图片: {}", bmpPath);
     }
 
     trt.Cleanup();
-    SX_LOG_INFO("Done");
+    SX_LOG_INFO("完成");
     return 0;
 }
