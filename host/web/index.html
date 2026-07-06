@@ -2,197 +2,520 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>Synapse-X 控制面板</title>
 <style>
-  :root {
-    --bg: #0d1117; --card: #161b22; --border: #30363d;
-    --accent: #58a6ff; --text: #c9d1d9; --dim: #8b949e;
-    --green: #3fb950; --red: #f85149; --orange: #d2991d;
-  }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--text); font-family:'Segoe UI','Microsoft YaHei',sans-serif;
-         display:flex; justify-content:center; padding:16px; }
-  .panel { max-width:1020px; width:100%; display:grid;
-           grid-template-columns:1.4fr 1fr; gap:14px; align-items:start; }
-  h1 { font-size:19px; color:var(--accent); }
-  .sub { color:var(--dim); font-size:12px; }
-  .header-row { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; }
+/* ═══════════════════════════════════════════════════════
+   设计系统
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --bg-deep:      #0b0e14;
+  --bg-surface:   #131822;
+  --bg-elevated:  #1a2030;
+  --bg-hover:     #222b3d;
+  --border:       #1e293b;
+  --border-light: #2a364a;
+  --text-primary: #e2e8f0;
+  --text-secondary:#94a3b8;
+  --text-dim:     #64748b;
+  --accent:       #3b82f6;
+  --accent-glow:  rgba(59,130,246,0.25);
+  --green:        #22c55e;
+  --green-bg:     rgba(34,197,94,0.12);
+  --yellow:       #eab308;
+  --yellow-bg:    rgba(234,179,8,0.12);
+  --red:          #ef4444;
+  --red-bg:       rgba(239,68,68,0.12);
+  --radius:       12px;
+  --radius-sm:    8px;
+  --shadow:       0 1px 3px rgba(0,0,0,0.4);
+  --font:         'Segoe UI','Microsoft YaHei',system-ui,-apple-system,sans-serif;
+  --mono:         'JetBrains Mono','Cascadia Code','Consolas',monospace;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { font-size:15px; }
+body {
+  background:var(--bg-deep); color:var(--text-primary);
+  font-family:var(--font); min-height:100vh;
+  display:flex; justify-content:center; padding:16px;
+}
+/* ═══════════════════════════════════════════════════════
+   布局
+   ═══════════════════════════════════════════════════════ */
+.container { max-width:1120px; width:100%; }
+.grid { display:grid; grid-template-columns:1.4fr 1fr; gap:14px; align-items:start; }
+/* ═══════════════════════════════════════════════════════
+   顶栏
+   ═══════════════════════════════════════════════════════ */
+.header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 0 12px; grid-column:1/-1;
+}
+.header-brand { display:flex; align-items:center; gap:10px; }
+.header-logo {
+  width:34px; height:34px; border-radius:8px;
+  background:linear-gradient(135deg,var(--accent),#6366f1);
+  display:flex; align-items:center; justify-content:center;
+  font-size:18px; color:#fff; font-weight:700;
+}
+.header-title { font-size:17px; font-weight:700; letter-spacing:0.3px; }
+.header-right { display:flex; align-items:center; gap:12px; }
+.status-badge {
+  display:flex; align-items:center; gap:6px; padding:4px 12px;
+  border-radius:20px; font-size:12px; font-weight:600; transition:.3s;
+}
+.status-badge.running { background:var(--green-bg); color:var(--green); }
+.status-badge.paused  { background:var(--yellow-bg); color:var(--yellow); }
+.status-badge .dot {
+  width:7px; height:7px; border-radius:50%; display:inline-block;
+}
+.status-badge.running .dot { background:var(--green); box-shadow:0 0 6px var(--green); }
+.status-badge.paused .dot  { background:var(--yellow); box-shadow:0 0 6px var(--yellow); }
+/* ═══════════════════════════════════════════════════════
+   全局开关
+   ═══════════════════════════════════════════════════════ */
+.master-card {
+  grid-column:1/-1; background:var(--bg-surface);
+  border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 20px; display:flex; align-items:center;
+  justify-content:space-between; flex-wrap:wrap; gap:12px;
+}
+.master-left { display:flex; align-items:center; gap:16px; }
+.master-icon {
+  width:44px; height:44px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center; font-size:20px;
+}
+.master-icon.on  { background:var(--green-bg); color:var(--green); }
+.master-icon.off { background:var(--red-bg); color:var(--red); }
+.master-info { display:flex; flex-direction:column; gap:2px; }
+.master-label { font-size:15px; font-weight:600; }
+.master-summary {
+  font-size:12px; color:var(--text-secondary); display:flex; gap:14px;
+  flex-wrap:wrap;
+}
+.master-summary span { display:flex; align-items:center; gap:3px; }
+.master-summary .num { color:var(--accent); font-family:var(--mono); font-weight:600; }
+.master-actions { display:flex; gap:8px; }
+/* ═══════════════════════════════════════════════════════
+   按钮
+   ═══════════════════════════════════════════════════════ */
+.btn {
+  padding:7px 16px; border:none; border-radius:var(--radius-sm);
+  font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
+  font-family:var(--font); display:inline-flex; align-items:center; gap:5px;
+}
+.btn:hover { filter:brightness(1.1); }
+.btn:active { transform:scale(0.97); }
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary.outline { background:transparent; border:1px solid var(--accent); color:var(--accent); }
+.btn-green { background:var(--green); color:#000; }
+.btn-green.outline { background:transparent; border:1px solid var(--green); color:var(--green); }
+.btn-red { background:var(--red); color:#fff; }
+.btn-red.outline { background:transparent; border:1px solid var(--red); color:var(--red); }
+.btn-ghost { background:var(--bg-elevated); color:var(--text-secondary); border:1px solid var(--border); }
+.btn-ghost:hover { background:var(--bg-hover); color:var(--text-primary); }
+.btn-sm { padding:4px 10px; font-size:11px; }
+/* ═══════════════════════════════════════════════════════
+   通用卡片
+   ═══════════════════════════════════════════════════════ */
+.card {
+  background:var(--bg-surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px; box-shadow:var(--shadow);
+}
+.card-title {
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:1.2px; color:var(--text-dim);
+  margin-bottom:12px; display:flex; align-items:center; gap:6px;
+}
+.card-title .icon { font-size:14px; }
+/* ═══════════════════════════════════════════════════════
+   滑块组
+   ═══════════════════════════════════════════════════════ */
+.slider-group { margin-bottom:12px; }
+.slider-group:last-child { margin-bottom:0; }
+.slider-header {
+  display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:4px;
+}
+.slider-header label { font-size:13px; color:var(--text-secondary); }
+.slider-value {
+  font-family:var(--mono); font-size:14px; font-weight:600;
+  color:var(--accent); min-width:44px; text-align:right;
+}
+.slider-wrap {
+  position:relative; height:24px; display:flex; align-items:center;
+}
+input[type=range] {
+  -webkit-appearance:none; appearance:none; width:100%;
+  height:8px; border-radius:4px; outline:none;
+  background:var(--bg-elevated); cursor:pointer;
+  transition:background .1s;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; appearance:none;
+  width:20px; height:20px; border-radius:50%;
+  background:var(--accent); cursor:pointer;
+  border:2px solid var(--bg-surface);
+  box-shadow:0 0 0 2px var(--accent), 0 0 12px var(--accent-glow);
+  transition:transform .12s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.12); }
+input[type=range]::-moz-range-thumb {
+  width:20px; height:20px; border-radius:50%;
+  background:var(--accent); cursor:pointer;
+  border:2px solid var(--bg-surface);
+  box-shadow:0 0 0 2px var(--accent), 0 0 8px var(--accent-glow);
+}
+input[type=range]:active::-webkit-slider-thumb { transform:scale(1.1); }
+/* ═══════════════════════════════════════════════════════
+   选择器
+   ═══════════════════════════════════════════════════════ */
+.select-group { margin-bottom:10px; }
+.select-group:last-child { margin-bottom:0; }
+.select-group label {
+  display:block; font-size:12px; color:var(--text-dim);
+  margin-bottom:3px; font-weight:500;
+}
+.select-group select {
+  width:100%; padding:7px 10px;
+  background:var(--bg-elevated); color:var(--text-primary);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  font-size:13px; font-family:var(--font); cursor:pointer;
+  outline:none; transition:border-color .15s;
+  -webkit-appearance:none; appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center;
+  padding-right:30px;
+}
+.select-group select:hover { border-color:var(--border-light); }
+.select-group select:focus { border-color:var(--accent); }
+/* ═══════════════════════════════════════════════════════
+   单选按钮组 (身体/头部)
+   ═══════════════════════════════════════════════════════ */
+.radio-group { display:flex; gap:8px; margin:6px 0 4px; }
+.radio-option {
+  flex:1; padding:8px 10px; text-align:center; font-size:13px;
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  cursor:pointer; transition:all .15s; font-weight:500;
+  background:var(--bg-elevated); color:var(--text-secondary);
+  user-select:none;
+}
+.radio-option:hover { border-color:var(--border-light); }
+.radio-option.active {
+  border-color:var(--accent); background:var(--accent-glow); color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent);
+}
+.radio-option input { display:none; }
+/* ═══════════════════════════════════════════════════════
+   条件行 (headOffset / deltaHeadConf)
+   ═══════════════════════════════════════════════════════ */
+.cond-row { display:none; }
+.cond-row.show { display:block; }
+/* ═══════════════════════════════════════════════════════
+   统计卡片
+   ═══════════════════════════════════════════════════════ */
+.stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.stat-item {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:5px 8px; background:var(--bg-elevated); border-radius:4px; font-size:12px;
+}
+.stat-label { color:var(--text-secondary); }
+.stat-val { font-family:var(--mono); font-weight:600; font-size:12px; }
+.stat-val.good { color:var(--green); }
+.stat-val.warn { color:var(--yellow); }
+.stat-val.bad  { color:var(--red); }
+/* ═══════════════════════════════════════════════════════
+   Canvas 容器
+   ═══════════════════════════════════════════════════════ */
+.canvas-box {
+  background:var(--bg-elevated); border-radius:6px;
+  margin-top:8px; position:relative; display:flex; justify-content:center;
+}
+.canvas-box canvas { display:block; width:100%; height:auto; border-radius:4px; }
+.sparkline-box { margin-top:10px; }
+.sparkline-box .label-row {
+  display:flex; justify-content:space-between; font-size:11px;
+  color:var(--text-dim); margin-bottom:4px;
+}
 
-  /* Master Toggle */
-  .master-toggle { grid-column:1/-1; display:flex; align-items:center; gap:14px;
-    background:var(--card); border:1px solid var(--border);
-    border-radius:10px; padding:14px 18px; }
-  .master-toggle span { font-size:15px; font-weight:600; }
-  .master-toggle input { display:none; }
-  .master-toggle label.tgl { width:48px; height:26px; background:var(--border);
-    border-radius:13px; cursor:pointer; position:relative; transition:background .25s; }
-  .master-toggle label.tgl::after { content:''; position:absolute; top:2px; left:2px;
-    width:22px; height:22px; border-radius:50%; background:#fff; transition:left .25s; }
-  .master-toggle input:checked+label.tgl { background:var(--green);
-    box-shadow:0 0 12px rgba(63,185,80,0.35); }
-  .master-toggle input:checked+label.tgl::after { left:24px; }
-  .master-status { font-size:13px; color:var(--red); }
-  .master-toggle input:checked~.master-status { color:var(--green); }
-
-  /* Cards */
-  .card { background:var(--card); border:1px solid var(--border);
-          border-radius:9px; padding:13px 15px; }
-  .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase;
-             letter-spacing:1px; margin-bottom:10px; padding-bottom:8px;
-             border-bottom:1px solid var(--border); }
-  label { display:flex; justify-content:space-between; align-items:center;
-          font-size:13px; margin-bottom:4px; }
-  label span.val { color:var(--accent); font-weight:600; min-width:44px; text-align:right; font-size:12px; }
-  input[type=range] { -webkit-appearance:none; width:100%; height:5px;
-    border-radius:3px; background:var(--border); outline:none; margin-bottom:10px; }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px;
-    border-radius:50%; background:var(--accent); cursor:pointer; }
-  select { width:100%; padding:5px 6px; background:var(--bg); color:var(--text);
-    border:1px solid var(--border); border-radius:4px; margin-bottom:10px; font-size:13px; }
-
-  /* Stats */
-  .stat-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; }
-  .stat-item { display:flex; justify-content:space-between; padding:3px 7px;
-               background:#0d1117; border-radius:3px; }
-  .stat-val { color:var(--accent); font-weight:600; }
-  .stat-val.good { color:var(--green); }
-  .target-box { font-size:12px; padding:6px 8px; background:#0d1117; border-radius:4px;
-                margin-top:6px; display:none; }
-  .target-box.active { display:block; border-left:3px solid var(--red); }
-  .target-box .cls { color:var(--red); font-weight:600; }
-
-  /* Save/Load */
-  .preset-input { display:flex; gap:8px; margin-bottom:10px; }
-  .preset-input input { flex:1; padding:5px 8px; background:var(--bg); color:var(--text);
-    border:1px solid var(--border); border-radius:4px; font-size:13px; }
-  .btn { padding:5px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer;
-         font-weight:600; transition:opacity .15s; }
-  .btn:hover { opacity:0.85; }
-  .btn-save { background:var(--accent); color:#fff; }
-  .btn-load { background:var(--green); color:#000; }
-  .btn-del { background:#30363d; color:var(--red); }
-  .preset-list { max-height:200px; overflow-y:auto; }
-  .preset-row { display:flex; justify-content:space-between; align-items:center;
-    padding:5px 8px; border-bottom:1px solid var(--border); font-size:13px; }
-  .preset-row:last-child { border-bottom:none; }
-  .preset-row .btns { display:flex; gap:4px; }
-
-  .footer { grid-column:1/-1; text-align:center; color:var(--dim); font-size:11px; margin-top:4px; }
-
-  /* Responsive */
-  @media (max-width:780px) {
-    .panel { grid-template-columns:1fr; max-width:520px; }
-  }
+/* ═══════════════════════════════════════════════════════
+   参数方案
+   ═══════════════════════════════════════════════════════ */
+.preset-save-row { display:flex; gap:6px; margin-bottom:8px; }
+.preset-save-row input {
+  flex:1; padding:6px 10px; background:var(--bg-elevated); color:var(--text-primary);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  font-size:13px; font-family:var(--font); outline:none;
+}
+.preset-save-row input:focus { border-color:var(--accent); }
+.preset-list { max-height:200px; overflow-y:auto; }
+.preset-item {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 10px; border-radius:4px; font-size:13px;
+  background:var(--bg-elevated); margin-bottom:4px; transition:background .1s;
+}
+.preset-item:hover { background:var(--bg-hover); }
+.preset-item .name { color:var(--text-primary); }
+.preset-item .btns { display:flex; gap:4px; }
+.empty-presets {
+  font-size:12px; color:var(--text-dim); padding:12px 0; text-align:center;
+}
+/* ═══════════════════════════════════════════════════════
+   底栏
+   ═══════════════════════════════════════════════════════ */
+.footer {
+  grid-column:1/-1; text-align:center;
+  color:var(--text-dim); font-size:11px; padding:10px 0 4px;
+  border-top:1px solid var(--border); margin-top:4px;
+  display:flex; justify-content:center; gap:16px;
+}
+.footer span { display:inline-flex; align-items:center; gap:4px; }
+/* ═══════════════════════════════════════════════════════
+   响应式
+   ═══════════════════════════════════════════════════════ */
+@media (max-width:820px) {
+  .grid { grid-template-columns:1fr; }
+  .master-card { flex-direction:column; align-items:stretch; }
+  .master-actions { justify-content:center; }
+  body { padding:10px; }
+}
+@media (max-width:480px) {
+  .header { flex-wrap:wrap; gap:8px; }
+  .header-right { margin-left:auto; }
+  .stats-grid { grid-template-columns:1fr; }
+  .card { padding:12px; }
+  .master-left { gap:12px; }
+}
 </style>
 </head>
 <body>
-<div class="panel">
-  <!-- Header -->
-  <div class="header-row"><h1>Synapse-X 控制面板</h1><div class="sub">实时调参 · 修改即时生效</div></div>
+<div class="container">
+<div class="grid" id="appGrid">
 
-  <!-- Master Toggle -->
-  <div class="master-toggle">
-    <span>系统状态</span>
-    <input type="checkbox" id="aimEnabled" checked>
-    <label class="tgl" for="aimEnabled"></label>
-    <span class="master-status" id="masterStatus">运行中</span>
-  </div>
-
-  <!-- ===== 左列 ===== -->
-
-  <!-- 瞄准参数 -->
-  <div class="card">
-    <h2>瞄准参数</h2>
-    <label>跟枪速度 (Kp) <span class="val" id="vKp">0.30</span></label>
-    <input type="range" id="Kp" min="0.05" max="1.50" step="0.01" value="0.30">
-
-    <label>平滑阻尼 (Kd) <span class="val" id="vKd">0.05</span></label>
-    <input type="range" id="Kd" min="0.00" max="0.50" step="0.01" value="0.05">
-
-    <label>视野半径 (px) <span class="val" id="vaimRange">200</span></label>
-    <input type="range" id="aimRange" min="50" max="1000" step="10" value="200">
-
-    <label>瞄准部位 <span class="val" id="vaimPoint">身体</span></label>
-    <select id="aimPoint">
-      <option value="0">身体（边界框中心）</option>
-      <option value="1">头部（边界框顶部）</option>
-    </select>
-
-    <div id="headOffsetRow" style="display:none">
-    <label>头部偏移 <span class="val" id="vheadOffset">0.20</span></label>
-    <input type="range" id="headOffset" min="0.05" max="0.25" step="0.01" value="0.20">
+  <!-- ═══ 顶栏 ═══ -->
+  <div class="header">
+    <div class="header-brand">
+      <div class="header-logo">SX</div>
+      <span class="header-title">Synapse-X</span>
+    </div>
+    <div class="header-right">
+      <span class="status-badge running" id="statusBadge">
+        <span class="dot"></span><span id="statusText">运行中</span>
+      </span>
     </div>
   </div>
 
-  <!-- 游戏设置 -->
-  <div class="card">
-    <h2>游戏设置</h2>
-    <label>游戏分辨率</label>
-    <select id="gameRes">
-      <option value="3840,2160">3840x2160 (16:9 原生)</option>
-      <option value="3456,2160">3456x2160 (16:10 拉伸)</option>
-      <option value="2880,2160">2880x2160 (4:3 拉伸)</option>
-      <option value="2560,1440">2560x1440 (16:9)</option>
-      <option value="1920,1080">1920x1080 (16:9)</option>
-    </select>
-
-    <label>选择游戏 <span class="val" id="vgameSelect">Apex 英雄</span></label>
-    <select id="gameSelect">
-      <option value="0">Apex 英雄</option>
-      <option value="1">三角洲行动</option>
-      <option value="2">战地 6</option>
-      <option value="3">守望先锋 2</option>
-      <option value="4">Aimlabs</option>
-      <option value="5">PUBG</option>
-    </select>
-  </div>
-
-  <!-- 动态 Kp 引擎 -->
-  <div class="card">
-    <h2>动态 Kp 引擎</h2>
-    <label>最大 Kp（贴脸磁吸）<span class="val" id="vkpMax">0.75</span></label>
-    <input type="range" id="kpMax" min="0.10" max="1.50" step="0.05" value="0.75">
-    <label>Kp 衰减陡度 <span class="val" id="vkpDecay">0.05</span></label>
-    <input type="range" id="kpDecay" min="0.00" max="0.15" step="0.01" value="0.05">
-  </div>
-
-  <!-- 置信度过滤 -->
-  <div class="card">
-    <h2>置信度过滤</h2>
-    <label>全局置信度 <span class="val" id="vminConfidence">0.25</span></label>
-    <input type="range" id="minConfidence" min="0.0" max="1.0" step="0.01" value="0.25">
-    <div id="deltaHeadConfRow" style="display:none">
-    <label>Delta/PUBG 头部置信度 <span class="val" id="vdeltaHeadConfidence">0.40</span></label>
-    <input type="range" id="deltaHeadConfidence" min="0.10" max="0.80" step="0.01" value="0.40">
+  <!-- ═══ 全局开关 ═══ -->
+  <div class="master-card">
+    <div class="master-left">
+      <div class="master-icon on" id="masterIcon">⚡</div>
+      <div class="master-info">
+        <span class="master-label" id="masterLabel">自瞄运行中</span>
+        <div class="master-summary">
+          <span>帧率 <span class="num" id="mFps">—</span></span>
+          <span>延迟 <span class="num" id="mMs">—</span></span>
+          <span>丢包 <span class="num" id="mDrop">—</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="master-actions">
+      <button class="btn btn-primary outline" id="btnToggleAim">⏸ 暂停自瞄</button>
+      <button class="btn btn-ghost" id="btnToggleEnable">⏹ 禁用</button>
     </div>
   </div>
 
-  <!-- ===== 右列 ===== -->
+  <!-- ═══ 左列 ─ 参数 ═══ -->
 
-  <!-- 管线统计 -->
+  <!-- 🎯 瞄准参数 -->
   <div class="card">
-    <h2>管线统计</h2>
-    <div class="stat-row" id="stats"></div>
-    <div class="target-box" id="targetBox">
-      目标：<span class="cls" id="tCls">敌人</span>
-      置信度=<span id="tConf">0.00</span>
-      距离=<span id="tDist">0</span>px
-      坐标=(<span id="tX">0</span>, <span id="tY">0</span>)
+    <div class="card-title"><span class="icon">🎯</span> 瞄准参数</div>
+
+    <div class="slider-group">
+      <div class="slider-header">
+        <label>跟枪速度 (Kp)</label>
+        <span class="slider-value" id="vKp">0.30</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="Kp" min="0.05" max="1.50" step="0.01" value="0.30"
+               data-pct="20">
+      </div>
+    </div>
+
+    <div class="slider-group">
+      <div class="slider-header">
+        <label>平滑阻尼 (Kd)</label>
+        <span class="slider-value" id="vKd">0.05</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="Kd" min="0.00" max="0.50" step="0.01" value="0.05"
+               data-pct="10">
+      </div>
+    </div>
+
+    <div class="slider-group">
+      <div class="slider-header">
+        <label>视野半径 (px)</label>
+        <span class="slider-value" id="vaimRange">200</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="aimRange" min="50" max="1000" step="10" value="200"
+               data-pct="16">
+      </div>
+    </div>
+
+    <div class="slider-group" style="margin-bottom:0;">
+      <div class="slider-header">
+        <label>瞄准部位</label>
+        <span class="slider-value" id="vaimPoint" style="font-family:inherit;font-size:13px;">身体中心</span>
+      </div>
+      <div class="radio-group">
+        <label class="radio-option active" data-aim="0">
+          <input type="radio" name="aimPoint" value="0" checked> 🧍 身体中心
+        </label>
+        <label class="radio-option" data-aim="1">
+          <input type="radio" name="aimPoint" value="1"> 🧠 头部顶部
+        </label>
+      </div>
+      <div class="cond-row" id="headOffsetRow">
+        <div class="slider-group" style="margin-bottom:0;margin-top:6px;">
+          <div class="slider-header">
+            <label>头部偏移</label>
+            <span class="slider-value" id="vheadOffset">0.20</span>
+          </div>
+          <div class="slider-wrap">
+            <input type="range" id="headOffset" min="0.05" max="0.25" step="0.01" value="0.20"
+                   data-pct="75">
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- 参数方案 -->
+  <!-- ⚙️ 动态 Kp -->
   <div class="card">
-    <h2>参数方案</h2>
-    <div class="preset-input">
-      <input type="text" id="presetName" placeholder="输入方案名称..." maxlength="30">
-      <button class="btn btn-save" id="btnSave">保存</button>
+    <div class="card-title"><span class="icon">⚙️</span> 动态 Kp 引擎</div>
+    <div class="slider-group">
+      <div class="slider-header">
+        <label>最大 Kp（贴脸磁吸）</label>
+        <span class="slider-value" id="vkpMax">0.75</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="kpMax" min="0.10" max="1.50" step="0.05" value="0.75"
+               data-pct="46">
+      </div>
     </div>
-    <div class="preset-list" id="presetList"></div>
+    <div class="slider-group" style="margin-bottom:0;">
+      <div class="slider-header">
+        <label>Kp 衰减陡度</label>
+        <span class="slider-value" id="vkpDecay">0.05</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="kpDecay" min="0.00" max="0.15" step="0.01" value="0.05"
+               data-pct="33">
+      </div>
+    </div>
   </div>
 
-  <div class="footer">Synapse-X · 已连接 <span id="hostInfo">...</span></div>
+  <!-- 🎮 游戏设置 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🎮</span> 游戏设置</div>
+    <div class="select-group">
+      <label>分辨率</label>
+      <select id="gameRes">
+        <option value="3840,2160">3840×2160 (16:9 原生)</option>
+        <option value="3456,2160">3456×2160 (16:10 拉伸)</option>
+        <option value="2880,2160">2880×2160 (4:3 拉伸)</option>
+        <option value="2560,1440">2560×1440 (16:9)</option>
+        <option value="1920,1080">1920×1080 (16:9)</option>
+      </select>
+    </div>
+    <div class="select-group" style="margin-bottom:0;">
+      <label>游戏</label>
+      <select id="gameSelect">
+        <option value="0">Apex 英雄</option>
+        <option value="1">三角洲行动</option>
+        <option value="2">战地 6</option>
+        <option value="3">守望先锋 2</option>
+        <option value="4">Aimlabs</option>
+        <option value="5">PUBG</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- 📡 置信度过滤 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📡</span> 置信度过滤</div>
+    <div class="slider-group">
+      <div class="slider-header">
+        <label>全局置信度</label>
+        <span class="slider-value" id="vminConfidence">0.25</span>
+      </div>
+      <div class="slider-wrap">
+        <input type="range" id="minConfidence" min="0.0" max="1.0" step="0.01" value="0.25"
+               data-pct="25">
+      </div>
+    </div>
+    <div class="cond-row" id="deltaHeadConfRow">
+      <div class="slider-group" style="margin-bottom:0;">
+        <div class="slider-header">
+          <label>Delta/PUBG 头部置信度</label>
+          <span class="slider-value" id="vdeltaHeadConfidence">0.40</span>
+        </div>
+        <div class="slider-wrap">
+          <input type="range" id="deltaHeadConfidence" min="0.10" max="0.80" step="0.01" value="0.40"
+                 data-pct="43">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 右列 ─ 监控 ═══ -->
+
+  <!-- 📊 实时管线 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📊</span> 实时管线</div>
+    <div class="stats-grid" id="stats">
+      <div class="stat-item"><span class="stat-label">发送帧率</span><span class="stat-val" id="sFps">—</span></div>
+      <div class="stat-item"><span class="stat-label">管线延迟</span><span class="stat-val" id="sMs">—</span></div>
+      <div class="stat-item"><span class="stat-label">压缩耗时</span><span class="stat-val" id="sComp">—</span></div>
+      <div class="stat-item"><span class="stat-label">采集帧率</span><span class="stat-val" id="sCap">—</span></div>
+      <div class="stat-item"><span class="stat-label">新鲜帧</span><span class="stat-val" id="sFresh">—</span></div>
+      <div class="stat-item"><span class="stat-label">缓存帧</span><span class="stat-val" id="sCache">—</span></div>
+      <div class="stat-item"><span class="stat-label">总发送</span><span class="stat-val" id="sTotal">—</span></div>
+      <div class="stat-item"><span class="stat-label">运行时间</span><span class="stat-val" id="sUptime">—</span></div>
+    </div>
+
+    <div class="sparkline-box">
+      <div class="label-row">
+        <span>延迟趋势（最近 60 秒）</span>
+        <span id="sparkLabel">—</span>
+      </div>
+      <div class="canvas-box">
+        <canvas id="sparkCanvas" width="360" height="68"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💾 参数方案 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">💾</span> 参数方案</div>
+    <div class="preset-save-row">
+      <input type="text" id="presetName" placeholder="方案名称..." maxlength="30">
+      <button class="btn btn-primary btn-sm" id="btnSave">💾 保存</button>
+    </div>
+    <div class="preset-list" id="presetList">
+      <div class="empty-presets">暂无保存的方案</div>
+    </div>
+  </div>
+
+  <!-- ═══ 底栏 ═══ -->
+  <div class="footer">
+    <span>🔗 已连接 <span id="fHost">...</span></span>
+    <span>⏱ <span id="fUptime">00:00</span></span>
+    <span>Synapse-X v1.0</span>
+  </div>
+
+</div>
 </div>
 
 <script>
@@ -200,20 +523,40 @@
 'use strict';
 
 var HOST = location.origin;
-var $ = function(id) { return document.getElementById(id); };
+
+// ── 辅助函数 ──────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+function qs(sel, ctx) { return (ctx||document).querySelector(sel); }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+var GAME_NAMES = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
+var PRESET_PREFIX = 'sx_preset_';
+var SPARK_SAMPLES = 120;
+
+// ── 状态 ───────────────────────────────────────────────
 var initialConfigLoaded = false;
+var sparkData = [];  // 延迟采样
+var sessionStart = Date.now();
 
-// ═══════════════════════════════════════════════════════════
-//  配置读写
-// ═══════════════════════════════════════════════════════════
+// ── 更新滑块填充色 ────────────────────────────────────
+function updateSliderFill(slider) {
+  var min = parseFloat(slider.min) || 0;
+  var max = parseFloat(slider.max) || 1;
+  var val = parseFloat(slider.value);
+  var pct = ((val - min) / (max - min)) * 100;
+  slider.style.background =
+    'linear-gradient(to right, var(--accent) 0%, var(--accent) ' + pct +
+    '%, var(--bg-elevated) ' + pct + '%, var(--bg-elevated) 100%)';
+}
 
+// ── 从 UI 读取配置 ────────────────────────────────────
 function getConfig() {
   return {
     Kp: parseFloat($('Kp').value),
     Kd: parseFloat($('Kd').value),
     aimRange: parseInt($('aimRange').value),
     minConfidence: parseFloat($('minConfidence').value),
-    aimPoint: parseInt($('aimPoint').value),
+    aimPoint: parseInt(qs('input[name="aimPoint"]:checked').value),
     headOffset: parseFloat($('headOffset').value),
     deltaHeadConfidence: parseFloat($('deltaHeadConfidence').value),
     kpMax: parseFloat($('kpMax').value),
@@ -221,91 +564,161 @@ function getConfig() {
     gameW: parseInt($('gameRes').value.split(',')[0]),
     gameH: parseInt($('gameRes').value.split(',')[1]),
     modelId: parseInt($('gameSelect').value),
-    aimEnabled: $('aimEnabled').checked
+    aimEnabled: $('btnToggleEnable').textContent.indexOf('禁用') !== -1
   };
 }
 
+// ── 将配置写入 UI ─────────────────────────────────────
 function setConfigUI(cfg) {
-  $('Kp').value = (cfg.Kp != null) ? cfg.Kp : 0.30;
-  $('Kd').value = (cfg.Kd != null) ? cfg.Kd : 0.05;
-  $('aimRange').value = cfg.aimRange || 200;
-  $('minConfidence').value = cfg.minConfidence || 0.25;
-  $('aimPoint').value = cfg.aimPoint || 0;
-  $('headOffset').value = cfg.headOffset || 0.20;
-  $('deltaHeadConfidence').value = cfg.deltaHeadConfidence || 0.40;
-  $('kpMax').value = (cfg.kpMax != null) ? cfg.kpMax : 0.75;
-  $('kpDecay').value = (cfg.kpDecay != null) ? cfg.kpDecay : 0.05;
-  var gw = cfg.gameW || 3840, gh = cfg.gameH || 2160;
-  $('gameRes').value = gw + ',' + gh;
-  $('gameSelect').value = cfg.modelId || 0;
-  var gn = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
-  $('vgameSelect').textContent = gn[cfg.modelId||0] || 'Apex 英雄';
-  $('aimEnabled').checked = cfg.aimEnabled !== false;
-  $('masterStatus').textContent = $('aimEnabled').checked ? '运行中' : '已暂停';
-  $('vKp').textContent = (cfg.Kp||0.30).toFixed(2);
-  $('vKd').textContent = (cfg.Kd||0.05).toFixed(2);
-  $('vaimRange').textContent = cfg.aimRange || 200;
-  $('vminConfidence').textContent = cfg.minConfidence || 0.25;
-  $('vaimPoint').textContent = (cfg.aimPoint===1) ? '头部' : '身体';
-  $('vheadOffset').textContent = (cfg.headOffset||0.20).toFixed(2);
-  $('vdeltaHeadConfidence').textContent = (cfg.deltaHeadConfidence||0.40).toFixed(2);
-  $('vkpMax').textContent = (cfg.kpMax != null ? cfg.kpMax : 0.75).toFixed(2);
-  $('vkpDecay').textContent = (cfg.kpDecay != null ? cfg.kpDecay : 0.05).toFixed(2);
-  updateHeadOffsetUI();
+  if (cfg.Kp != null) setSlider('Kp', cfg.Kp);
+  if (cfg.Kd != null) setSlider('Kd', cfg.Kd);
+  if (cfg.aimRange != null) setSlider('aimRange', cfg.aimRange);
+  if (cfg.minConfidence != null) setSlider('minConfidence', cfg.minConfidence);
+  if (cfg.headOffset != null) setSlider('headOffset', cfg.headOffset);
+  if (cfg.deltaHeadConfidence != null) setSlider('deltaHeadConfidence', cfg.deltaHeadConfidence);
+  if (cfg.kpMax != null) setSlider('kpMax', cfg.kpMax);
+  if (cfg.kpDecay != null) setSlider('kpDecay', cfg.kpDecay);
+
+  if (cfg.aimPoint != null) {
+    var opts = document.querySelectorAll('.radio-option');
+    opts.forEach(function(el) {
+      var val = parseInt(el.getAttribute('data-aim'));
+      var isActive = (val === cfg.aimPoint);
+      el.classList.toggle('active', isActive);
+      if (isActive) el.querySelector('input').checked = true;
+    });
+    $('vaimPoint').textContent = cfg.aimPoint === 1 ? '头部顶部' : '身体中心';
+  }
+
+  if (cfg.gameW && cfg.gameH) {
+    var res = cfg.gameW + ',' + cfg.gameH;
+    if ($('gameRes').querySelector('option[value="' + res + '"]')) {
+      $('gameRes').value = res;
+    }
+  }
+  if (cfg.modelId != null) {
+    $('gameSelect').value = cfg.modelId;
+  }
+
+  if (cfg.aimEnabled != null) {
+    updateEnableUI(cfg.aimEnabled);
+  }
+
+  updateConditionalUI();
 }
 
-function postConfig() {
-  fetch(HOST+'/api/config', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(getConfig())
+function setSlider(id, val) {
+  var el = $(id);
+  el.value = val;
+  updateSliderFill(el);
+  var vEl = $('v' + id);
+  if (vEl) {
+    if (id === 'aimRange') vEl.textContent = parseInt(val);
+    else vEl.textContent = parseFloat(val).toFixed(2);
+  }
+}
+
+function updateEnableUI(enabled) {
+  var btnText = $('btnToggleEnable');
+  if (enabled) {
+    btnText.textContent = '⏹ 禁用';
+    btnText.className = 'btn btn-ghost';
+    $('btnToggleAim').textContent = '⏸ 暂停自瞄';
+    $('masterLabel').textContent = '自瞄运行中';
+    $('masterIcon').className = 'master-icon on';
+  } else {
+    btnText.textContent = '⚡ 启用';
+    btnText.className = 'btn btn-green';
+    $('btnToggleAim').textContent = '▶ 恢复自瞄';
+    $('masterLabel').textContent = '自瞄已禁用';
+    $('masterIcon').className = 'master-icon off';
+  }
+}
+
+// ── 条件 UI（headOffset / deltaHeadConf）───────────────
+function updateConditionalUI() {
+  var modelId = parseInt($('gameSelect').value);
+  var isHead = parseInt(qs('input[name="aimPoint"]:checked').value) === 1;
+  var isDeltaOrPubg = modelId === 1 || modelId === 5;
+
+  $('deltaHeadConfRow').classList.toggle('show', isDeltaOrPubg);
+  $('headOffsetRow').classList.toggle('show', isHead && !isDeltaOrPubg);
+}
+
+// ── POST 配置 ─────────────────────────────────────────
+function postConfig(extra) {
+  var body = extra || getConfig();
+  fetch(HOST + '/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
   }).catch(function(){});
 }
 
-// ═══════════════════════════════════════════════════════════
-//  滑块绑定
-// ═══════════════════════════════════════════════════════════
+// ── 滑块绑定 ──────────────────────────────────────────
+var SLIDER_IDS = ['Kp','Kd','aimRange','minConfidence','headOffset',
+                  'deltaHeadConfidence','kpMax','kpDecay'];
 
-['Kp','Kd','aimRange','minConfidence','headOffset','deltaHeadConfidence','kpMax','kpDecay'].forEach(function(id) {
-  $(id).addEventListener('input', function() {
-    var v = $(id).value;
-    if (id === 'aimRange') v = parseInt(v);
-    else if (id === 'Kd') v = parseFloat(v).toFixed(2);
-    else v = parseFloat(v);
-    $('v'+id).textContent = v;
-    postConfig();
+SLIDER_IDS.forEach(function(id) {
+  var el = $(id);
+  el.addEventListener('input', function() {
+    var val = el.value;
+    var display = (id === 'aimRange') ? parseInt(val) : parseFloat(val).toFixed(2);
+    $('v' + id).textContent = display;
+    updateSliderFill(el);
+  });
+  el.addEventListener('change', function() {
+    // change 触发时才 POST（input 实时只是界面反馈）
+    var cfg = {};
+    cfg[id] = (id === 'aimRange') ? parseInt(el.value) : parseFloat(el.value);
+    postConfig(cfg);
+  });
+  // 初始填充
+  updateSliderFill(el);
+});
+
+// ── 瞄准点 radio ──────────────────────────────────────
+document.querySelectorAll('.radio-option').forEach(function(el) {
+  el.addEventListener('click', function() {
+    if (this.classList.contains('active')) return;
+    document.querySelectorAll('.radio-option').forEach(function(e) {
+      e.classList.remove('active');
+    });
+    this.classList.add('active');
+    this.querySelector('input').checked = true;
+    var val = parseInt(this.getAttribute('data-aim'));
+    $('vaimPoint').textContent = val === 1 ? '头部顶部' : '身体中心';
+    updateConditionalUI();
+    postConfig({ aimPoint: val });
   });
 });
-$('aimEnabled').addEventListener('change', function() {
-  $('masterStatus').textContent = this.checked ? '运行中' : '已暂停';
-  postConfig();
-});
-$('gameRes').addEventListener('change', postConfig);
 
-function updateHeadOffsetUI() {
-  var isHead = $('aimPoint').value === '1';
-  var isDelta = (parseInt($('gameSelect').value) === 1 || parseInt($('gameSelect').value) === 5);
-  $('headOffsetRow').style.display = (isHead && !isDelta) ? '' : 'none';
-  $('deltaHeadConfRow').style.display = isDelta ? '' : 'none';
-}
-
+// ── 游戏/分辨率 select ────────────────────────────────
 $('gameSelect').addEventListener('change', function() {
-  var names = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
-  $('vgameSelect').textContent = names[parseInt(this.value)] || 'Apex 英雄';
-  updateHeadOffsetUI();
-  postConfig();
+  updateConditionalUI();
+  postConfig({ modelId: parseInt(this.value) });
 });
-$('aimPoint').addEventListener('change', function() {
-  $('vaimPoint').textContent = this.value==='1' ? '头部' : '身体';
-  updateHeadOffsetUI();
-  postConfig();
+$('gameRes').addEventListener('change', function() {
+  var parts = this.value.split(',');
+  postConfig({ gameW: parseInt(parts[0]), gameH: parseInt(parts[1]) });
 });
 
-// ═══════════════════════════════════════════════════════════
-//  参数方案保存 / 加载 / 删除 (localStorage)
-// ═══════════════════════════════════════════════════════════
+// ── 主开关按钮 ────────────────────────────────────────
+$('btnToggleAim').addEventListener('click', function() {
+  var enabled = $('btnToggleEnable').textContent.indexOf('禁用') !== -1;
+  // 暂停/恢复 = 切换 aimEnabled
+  postConfig({ aimEnabled: !enabled });
+  // 立即更新 UI（后端会确认，但先更新 UI 响应更快）
+  updateEnableUI(!enabled);
+});
 
-var PRESET_PREFIX = 'sx_preset_';
+$('btnToggleEnable').addEventListener('click', function() {
+  var enabled = this.textContent.indexOf('禁用') !== -1;
+  postConfig({ aimEnabled: !enabled });
+  updateEnableUI(!enabled);
+});
 
+// ── 参数方案 ──────────────────────────────────────────
 function listPresets() {
   var names = [];
   for (var i = 0; i < localStorage.length; i++) {
@@ -315,16 +728,16 @@ function listPresets() {
   names.sort();
   var html = '';
   names.forEach(function(name) {
-    html += '<div class="preset-row"><span>'+escHtml(name)+
-      '</span><div class="btns">'+
-      '<button class="btn btn-load" data-load="'+escAttr(name)+'">加载</button>'+
-      '<button class="btn btn-del" data-del="'+escAttr(name)+'">删</button>'+
+    html += '<div class="preset-item">' +
+      '<span class="name">' + escHtml(name) + '</span>' +
+      '<div class="btns">' +
+      '<button class="btn btn-primary btn-sm" data-load="' + escHtml(name).replace(/"/g,'&quot;') + '">加载</button>' +
+      '<button class="btn btn-red btn-sm" data-del="' + escHtml(name).replace(/"/g,'&quot;') + '">✕</button>' +
       '</div></div>';
   });
-  $('presetList').innerHTML = html || '<div style="font-size:12px;color:var(--dim);padding:8px 0;">暂无保存的方案</div>';
+  $('presetList').innerHTML = html || '<div class="empty-presets">暂无保存的方案</div>';
 
-  // 绑定加载按钮
-  [].forEach.call(document.querySelectorAll('[data-load]'), function(btn) {
+  document.querySelectorAll('[data-load]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var name = this.getAttribute('data-load');
       var json = localStorage.getItem(PRESET_PREFIX + name);
@@ -332,76 +745,198 @@ function listPresets() {
         try {
           var cfg = JSON.parse(json);
           setConfigUI(cfg);
-          postConfig();
+          postConfig(cfg);
           $('presetName').value = name;
-        } catch(e) { alert('方案数据损坏：' + name); }
+        } catch(e) { /* ignore corrupt data */ }
       }
     });
   });
-  // 绑定删除按钮
-  [].forEach.call(document.querySelectorAll('[data-del]'), function(btn) {
+  document.querySelectorAll('[data-del]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var name = this.getAttribute('data-del');
-      if (confirm('确定删除方案 "' + name + '" 吗？')) {
-        localStorage.removeItem(PRESET_PREFIX + name);
-        listPresets();
-      }
+      localStorage.removeItem(PRESET_PREFIX + name);
+      listPresets();
     });
   });
 }
 
-function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
-
 $('btnSave').addEventListener('click', function() {
   var name = $('presetName').value.trim();
-  if (!name) { alert('请输入方案名称'); return; }
+  if (!name) return;
   var cfg = getConfig();
-  // 不保存 aimEnabled 状态 — 这个由热键控制
   localStorage.setItem(PRESET_PREFIX + name, JSON.stringify(cfg));
   listPresets();
 });
+$('presetName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') $('btnSave').click();
+});
 
-// 初始加载方案列表
 listPresets();
 
-// ═══════════════════════════════════════════════════════════
-//  轮询
-// ═══════════════════════════════════════════════════════════
+// ── Canvas 微趋势图 ───────────────────────────────────
+function drawSparkline(canvas, data, latestMs) {
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  var pad = {top:4, bottom:10, left:4, right:4};
+  var pw = w - pad.left - pad.right;
+  var ph = h - pad.top - pad.bottom;
 
+  ctx.clearRect(0, 0, w, h);
+
+  if (data.length < 2) {
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('等待数据…', w/2, h/2 + 4);
+    return;
+  }
+
+  // 网格
+  ctx.strokeStyle = '#1a2030';
+  ctx.lineWidth = 0.5;
+  for (var gy = 0; gy < 3; gy++) {
+    var y = pad.top + (ph / 3) * (gy + 1);
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+  }
+
+  // 数据
+  var min = 0;
+  var max = Math.max(3, Math.max.apply(null, data) * 1.2);
+
+  ctx.beginPath();
+  ctx.lineWidth = 2;
+
+  for (var i = 0; i < data.length; i++) {
+    var x = pad.left + (i / (data.length - 1)) * pw;
+    var y = pad.top + ph - ((data[i] - min) / (max - min)) * ph;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+
+  // 渐变颜色
+  var grad = ctx.createLinearGradient(0, 0, w, 0);
+  var avg = data.reduce(function(a,b){return a+b;},0) / data.length;
+  if (avg < 0.5) {
+    grad.addColorStop(0, '#22c55e');
+    grad.addColorStop(1, '#22c55e');
+  } else if (avg < 1.0) {
+    grad.addColorStop(0, '#eab308');
+    grad.addColorStop(1, '#eab308');
+  } else {
+    grad.addColorStop(0, '#ef4444');
+    grad.addColorStop(1, '#ef4444');
+  }
+  ctx.strokeStyle = grad;
+  ctx.stroke();
+
+  // 末端圆点
+  if (data.length > 0) {
+    var last = data[data.length - 1];
+    var lx = pad.left + ((data.length - 1) / (data.length - 1)) * pw;
+    var ly = pad.top + ph - ((last - min) / (max - min)) * ph;
+    ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = last < 0.5 ? '#22c55e' : (last < 1.0 ? '#eab308' : '#ef4444');
+    ctx.fill();
+  }
+
+  // 标注最新值
+  if (latestMs != null) {
+    $('sparkLabel').textContent = latestMs.toFixed(2) + ' ms';
+  }
+}
+
+// ── Canvas 目标可视化 ─────────────────────────────────
+// ── 轮询 ──────────────────────────────────────────────
 function poll() {
-  fetch(HOST+'/api/state')
+  fetch(HOST + '/api/state')
     .then(function(r) { return r.json(); })
     .then(function(s) {
+      // 首次加载：用后端配置初始化 UI
       if (!initialConfigLoaded && s.config) {
         setConfigUI(s.config);
         initialConfigLoaded = true;
       }
-      $('stats').innerHTML =
-        '<div class="stat-item">发送帧率 <span class="stat-val good">'+s.sendFps.toFixed(0)+'</span></div>'+
-        '<div class="stat-item">采集帧率 <span class="stat-val">'+s.captureFps.toFixed(0)+'</span></div>'+
-        '<div class="stat-item">管线延迟 <span class="stat-val good">'+s.pipelineMs.toFixed(2)+' ms</span></div>'+
-        '<div class="stat-item">压缩耗时 <span class="stat-val">'+s.compressMs.toFixed(2)+' ms</span></div>'+
-        '<div class="stat-item">新鲜帧 <span class="stat-val">'+s.freshFrames+'</span></div>'+
-        '<div class="stat-item">缓存帧 <span class="stat-val">'+s.cacheFrames+'</span></div>'+
-        '<div class="stat-item">总发送 <span class="stat-val">'+s.totalSent+'</span></div>'+
-        '<div class="stat-item">运行时间 <span class="stat-val">'+(s.totalSent/170).toFixed(0)+'s</span></div>';
-      if (s.target && s.target.active) {
-        $('targetBox').className = 'target-box active';
-        $('tCls').textContent = s.target.classId===0 ? '敌人' : '队友';
-        $('tConf').textContent = s.target.confidence.toFixed(2);
-        $('tDist').textContent = s.target.distance.toFixed(0);
-        $('tX').textContent = s.target.screenX.toFixed(0);
-        $('tY').textContent = s.target.screenY.toFixed(0);
+
+      // ── 统计 ──
+      var fps = s.sendFps || 0;
+      var ms = s.pipelineMs || 0;
+      var comp = s.compressMs || 0;
+      var cap = s.captureFps || 0;
+      var fresh = s.freshFrames || 0;
+      var cache = s.cacheFrames || 0;
+      var total = s.totalSent || 0;
+
+      function cls(v, good, warn) { return v >= good ? 'good' : (v >= warn ? 'warn' : 'bad'); }
+
+      $('sFps').textContent = fps.toFixed(0) + ' fps';
+      $('sFps').className = 'stat-val ' + cls(fps, 165, 120);
+
+      $('sMs').textContent = ms.toFixed(2) + ' ms';
+      $('sMs').className = 'stat-val ' + cls(ms >= 0 ? 1/ms : 0, 2, 1) + ' ' +
+        (ms < 0.5 ? 'good' : (ms < 1.0 ? 'warn' : 'bad'));
+
+      $('sComp').textContent = comp.toFixed(3) + ' ms';
+      $('sCap').textContent = cap.toFixed(0) + ' fps';
+      $('sFresh').textContent = fresh;
+      $('sCache').textContent = cache;
+      $('sTotal').textContent = total;
+      var uptimeSec = total / 170;
+      $('sUptime').textContent = formatDuration(uptimeSec);
+
+      // ── 顶部摘要 ──
+      $('mFps').textContent = fps.toFixed(0);
+      $('mMs').textContent = ms.toFixed(1) + 'ms';
+      $('mDrop').textContent = '0%';  // 后端目前不返回丢包率
+
+      // ── 延迟微趋势 ──
+      sparkData.push(ms);
+      if (sparkData.length > SPARK_SAMPLES) sparkData.shift();
+      drawSparkline($('sparkCanvas'), sparkData, ms);
+
+      // ── 状态徽章 ──
+      var badge = $('statusBadge');
+      var aimOn = s.config ? s.config.aimEnabled !== false : true;
+      if (aimOn && fps > 0) {
+        badge.className = 'status-badge running';
+        $('statusText').textContent = '运行中';
+      } else if (!aimOn) {
+        badge.className = 'status-badge paused';
+        $('statusText').textContent = '已暂停';
       } else {
-        $('targetBox').className = 'target-box';
+        badge.className = 'status-badge paused';
+        $('statusText').textContent = '等待数据…';
       }
+
+      // ── 底栏更新时间 ──
+      var sessionSec = (Date.now() - sessionStart) / 1000;
+      $('fUptime').textContent = formatDuration(sessionSec);
     })
-    .catch(function(e) { console.error('轮询错误:', e); });
+    .catch(function(e) {
+      $('statusBadge').className = 'status-badge paused';
+      $('statusText').textContent = '断连';
+      $('mFps').textContent = '—';
+      $('mMs').textContent = '—';
+      $('mDrop').textContent = '—';
+    });
+
   setTimeout(poll, 500);
 }
 
-$('hostInfo').textContent = HOST;
+function formatDuration(sec) {
+  sec = Math.floor(sec);
+  var h = Math.floor(sec / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  var s = sec % 60;
+  if (h > 0) return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+// ── 初始 ──────────────────────────────────────────────
+$('fHost').textContent = HOST.replace(/^https?:\/\//, '');
+
+// 后端第一次返回 state 需要初始 config
+// setConfigUI 会调用 updateConditionalUI，但初始 HTML 状态也要对
+updateConditionalUI();
+
 poll();
 })();
 </script>
