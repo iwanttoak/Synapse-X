@@ -129,6 +129,7 @@ if(SX_CUDA_FOUND AND SX_TENSORRT_FOUND)
     target_include_directories(SynapseX_Inference PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/spdlog-1.17.0/include
         ${SX_CUDA_INCLUDE_DIRS}
         ${SX_TRT_INCLUDE_DIRS}
     )
