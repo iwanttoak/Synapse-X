@@ -222,6 +222,7 @@ SynapseX_Host.exe [目标IP] [端口] [roi宽] [roi高]
 | 3 | OW2 | 1类: 敌人 | classId==0, minConfidence |
 | 4 | Aimlabs | 1类: 敌人 | classId==0, minConfidence |
 | 5 | PUBG | 2类: 身体/头部 | 同 Delta |
+| 6 | CrossFire | 2类: 身体/头部 | 同 Delta |
 
 ### 空间锁定
 

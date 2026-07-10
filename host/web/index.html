@@ -438,6 +438,7 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.1); }
         <option value="3">守望先锋 2</option>
         <option value="4">Aimlabs</option>
         <option value="5">PUBG</option>
+        <option value="6">穿越火线</option>
       </select>
     </div>
   </div>
@@ -529,7 +530,7 @@ function $(id) { return document.getElementById(id); }
 function qs(sel, ctx) { return (ctx||document).querySelector(sel); }
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-var GAME_NAMES = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG'];
+var GAME_NAMES = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG','穿越火线'];
 var PRESET_PREFIX = 'sx_preset_';
 var SPARK_SAMPLES = 120;
 
@@ -639,7 +640,7 @@ function updateEnableUI(enabled) {
 function updateConditionalUI() {
   var modelId = parseInt($('gameSelect').value);
   var isHead = parseInt(qs('input[name="aimPoint"]:checked').value) === 1;
-  var isDeltaOrPubg = modelId === 1 || modelId === 5;
+  var isDeltaOrPubg = modelId === 1 || modelId === 5 || modelId === 6;
 
   $('deltaHeadConfRow').classList.toggle('show', isDeltaOrPubg);
   $('headOffsetRow').classList.toggle('show', isHead && !isDeltaOrPubg);

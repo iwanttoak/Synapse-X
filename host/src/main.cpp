@@ -334,6 +334,7 @@ int main(int argc, char* argv[]) {
 
                         case 1: // Delta     -- 2类：0=身体, 1=头部
                         case 5: // PUBG      -- 2类：0=身体, 1=头部
+                        case 6: // CrossFire -- 2类：0=身体, 1=头部（同Delta）
                             if (aimCfg.aimPoint == 1) {
                                 if (d.classId == 1 && d.confidence >= aimCfg.deltaHeadConfidence) {
                                     ap.cy       = bcyCenter;

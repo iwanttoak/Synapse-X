@@ -134,6 +134,7 @@ Model ID mapping (6 games):
 | 3 | Overwatch 2 | 1: enemy |
 | 4 | Aimlabs | 1: enemy |
 | 5 | PUBG | 2: body, head |
+| 6 | CrossFire | 2: body, head |
 
 ### Client GPU Pipeline (`TrtInference::Infer()`)
 
