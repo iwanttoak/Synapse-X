@@ -252,6 +252,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
                 static const char* kOw2Cls[]     = {"enemy"};
                 static const char* kAimlabsCls[] = {"enemy"};
                 static const char* kPubgCls[]    = {"body", "head"};
+                static const char* kCfCls[]      = {"body", "head"};
 
                 uint8_t mid = ctx->trt->GetCurrentModelId();
                 const char* gameName; const char* const* clsNames; int numCls;
@@ -262,6 +263,7 @@ static void ConsumerThread(ConsumerCtx* ctx) {
                     case 3: gameName="OW2";     clsNames=kOw2Cls;     numCls=1; break;
                     case 4: gameName="Aimlabs"; clsNames=kAimlabsCls; numCls=1; break;
                     case 5: gameName="PUBG";    clsNames=kPubgCls;    numCls=2; break;
+                    case 6: gameName="CrossFire"; clsNames=kCfCls;    numCls=2; break;
                     default: gameName="?";      clsNames=nullptr;     numCls=0; break;
                 }
                 SX_LOG_DEBUG("[Client] 推理帧={} 主机帧={} 模型={} 检测数={}",
