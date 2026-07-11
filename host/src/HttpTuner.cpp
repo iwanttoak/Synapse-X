@@ -153,6 +153,7 @@ void HttpTuner::ServerThread() {
         json += jsonStr("nativeW",      (int)m_state.config.nativeW) + ",";
         json += jsonStr("nativeH",      (int)m_state.config.nativeH) + ",";
         json += jsonStr("modelId",      (int)m_state.config.modelId) + ",";
+        json += jsonStr("classFilter",  m_state.config.classFilter) + ",";
         json += jsonStr("aimEnabled",    m_state.aimEnabled);
         json += "},";
         // 统计
@@ -195,15 +196,17 @@ void HttpTuner::ServerThread() {
         if (extractFloat(body, "gameW", f))         m_state.config.gameW         = (int)f;
         if (extractFloat(body, "gameH", f))         m_state.config.gameH         = (int)f;
         if (extractFloat(body, "modelId", f))       m_state.config.modelId       = (uint8_t)f;
+        if (extractFloat(body, "classFilter", f))   m_state.config.classFilter   = (int)f;
         if (extractFloat(body, "aimPoint", f))      m_state.config.aimPoint      = (int)f;
         if (extractBool(body, "aimEnabled", b))     m_state.aimEnabled           = b;
 
-        SX_LOG_DEBUG("[HttpTuner] 配置已更新: Kp={:.3f}, Kd={:.3f}, aimRange={:.1f}, minConfidence={:.2f}, modelId={}, aimEnabled={}",
+        SX_LOG_DEBUG("[HttpTuner] 配置已更新: Kp={:.3f}, Kd={:.3f}, aimRange={:.1f}, minConfidence={:.2f}, modelId={}, classFilter={}, aimEnabled={}",
                      m_state.config.Kp,
                      m_state.config.Kd,
                      m_state.config.aimRange,
                      m_state.config.minConfidence,
                      static_cast<int>(m_state.config.modelId),
+                     m_state.config.classFilter,
                      m_state.aimEnabled);
         res.set_content("{\"ok\":true}", "application/json");
     });

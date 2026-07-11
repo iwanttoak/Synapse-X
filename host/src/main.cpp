@@ -362,6 +362,17 @@ int main(int argc, char* argv[]) {
                             }
                             break;
 
+                        case 7: // CS2       -- 2类：0=CT, 1=T（同BF6风格，支持classFilter）
+                            if (aimCfg.classFilter != 2 && d.classId != static_cast<uint32_t>(aimCfg.classFilter))
+                                break;
+                            if (d.confidence >= aimCfg.minConfidence) {
+                                ap.cy       = (aimCfg.aimPoint == 1) ? bcyHead : bcyCenter;
+                                ap.priority = 1;
+                                ap.distance = std::sqrt((bcx-scrCx)*(bcx-scrCx) + (ap.cy-scrCy)*(ap.cy-scrCy));
+                                aimPoints.push_back(ap);
+                            }
+                            break;
+
                         default:
                             if (d.classId == 0 && d.confidence >= aimCfg.minConfidence) {
                                 ap.cy       = (aimCfg.aimPoint == 1) ? bcyHead : bcyCenter;

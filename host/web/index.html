@@ -439,7 +439,22 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.1); }
         <option value="4">Aimlabs</option>
         <option value="5">PUBG</option>
         <option value="6">穿越火线</option>
+        <option value="7">CS2</option>
       </select>
+    </div>
+    <div class="cond-row" id="classFilterRow">
+      <label>类别筛选 (CS2)</label>
+      <div class="radio-group" id="classFilterRadios">
+        <label class="radio-option" data-filter="0">
+          <input type="radio" name="classFilter" value="0"> CT
+        </label>
+        <label class="radio-option" data-filter="1">
+          <input type="radio" name="classFilter" value="1"> T
+        </label>
+        <label class="radio-option active" data-filter="2">
+          <input type="radio" name="classFilter" value="2" checked> 全部
+        </label>
+      </div>
     </div>
   </div>
 
@@ -530,7 +545,7 @@ function $(id) { return document.getElementById(id); }
 function qs(sel, ctx) { return (ctx||document).querySelector(sel); }
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-var GAME_NAMES = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG','穿越火线'];
+var GAME_NAMES = ['Apex 英雄','三角洲行动','战地 6','守望先锋 2','Aimlabs','PUBG','穿越火线','CS2'];
 var PRESET_PREFIX = 'sx_preset_';
 var SPARK_SAMPLES = 120;
 
@@ -565,6 +580,7 @@ function getConfig() {
     gameW: parseInt($('gameRes').value.split(',')[0]),
     gameH: parseInt($('gameRes').value.split(',')[1]),
     modelId: parseInt($('gameSelect').value),
+    classFilter: parseInt(qs('#classFilterRadios input:checked').value) || 2,
     aimEnabled: $('btnToggleEnable').textContent.indexOf('禁用') !== -1
   };
 }
@@ -599,6 +615,16 @@ function setConfigUI(cfg) {
   }
   if (cfg.modelId != null) {
     $('gameSelect').value = cfg.modelId;
+  }
+
+  if (cfg.classFilter != null) {
+    var cfRadios = document.querySelectorAll('#classFilterRadios .radio-option');
+    cfRadios.forEach(function(el) {
+      var val = parseInt(el.getAttribute('data-filter'));
+      var isActive = (val === cfg.classFilter);
+      el.classList.toggle('active', isActive);
+      if (isActive) el.querySelector('input').checked = true;
+    });
   }
 
   if (cfg.aimEnabled != null) {
@@ -636,14 +662,16 @@ function updateEnableUI(enabled) {
   }
 }
 
-// ── 条件 UI（headOffset / deltaHeadConf）───────────────
+// ── 条件 UI（headOffset / deltaHeadConf / classFilter）───
 function updateConditionalUI() {
   var modelId = parseInt($('gameSelect').value);
   var isHead = parseInt(qs('input[name="aimPoint"]:checked').value) === 1;
   var isDeltaOrPubg = modelId === 1 || modelId === 5 || modelId === 6;
+  var isCs2 = modelId === 7;
 
   $('deltaHeadConfRow').classList.toggle('show', isDeltaOrPubg);
-  $('headOffsetRow').classList.toggle('show', isHead && !isDeltaOrPubg);
+  $('headOffsetRow').classList.toggle('show', (isHead && !isDeltaOrPubg) || isCs2);
+  $('classFilterRow').classList.toggle('show', isCs2);
 }
 
 // ── POST 配置 ─────────────────────────────────────────
@@ -691,6 +719,18 @@ document.querySelectorAll('.radio-option').forEach(function(el) {
     $('vaimPoint').textContent = val === 1 ? '头部顶部' : '身体中心';
     updateConditionalUI();
     postConfig({ aimPoint: val });
+  });
+});
+
+// ── CS2 类别筛选 radio ──────────────────────────────
+document.querySelectorAll('#classFilterRadios .radio-option').forEach(function(el) {
+  el.addEventListener('click', function() {
+    document.querySelectorAll('#classFilterRadios .radio-option').forEach(function(e) {
+      e.classList.remove('active');
+    });
+    this.classList.add('active');
+    this.querySelector('input').checked = true;
+    postConfig({ classFilter: parseInt(this.getAttribute('data-filter')) });
   });
 });
 

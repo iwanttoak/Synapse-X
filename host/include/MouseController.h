@@ -36,6 +36,7 @@ struct AimConfig {
     uint8_t modelId       = 0;       // 模型选择器（0=416, 1=640, ...）
     float kpMax           = 0.75f;   // 近距离最大 Kp（磁吸效果）
     float kpDecay         = 0.05f;   // 衰减陡度（值越大，仅在近处才出现磁吸）
+    int   classFilter     = 2;       // 类别筛选：0=class0 only, 1=class1 only, 2=全部（仅用于CS2）
 };
 
 class MouseController {

@@ -32,7 +32,7 @@
 │  生产者(核心0) ──LIFO slot──→ 消费者(核心1)    │                │
 │  TensorRT 推理 (YOLO, FP16) ──────────────────┘                │
 │    UDP :8889 回传 (ReplyHeader + DetectionRaw[])               │
-│    支持热切换引擎（6款游戏，运行时切换）                         │
+│    支持热切换引擎（8款游戏，运行时切换）                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,11 +51,12 @@
 - **UDP 分包** — 24 字节 PacketHeader + ≤1400 字节载荷，非阻塞 4MB 缓冲区，MTU 安全
 - **可配置 ROI** — CLI: `416×416`、`640×640`，或任意 64–4096 像素
 - **TensorRT 推理** — YOLO FP16，NVRTC GPU 预处理 (BGRA→FP32 CHW RGB)，专用 CUDA 流，稳定约 1.5–1.8ms
-- **热切换引擎** — 6 款游戏模型运行时切换，无需重启 (Apex, Delta Force, BF6, OW2, Aimlabs, PUBG)
+- **热切换引擎** — 8 款游戏模型运行时切换，无需重启 (Apex, Delta Force, BF6, OW2, Aimlabs, PUBG, CrossFire, CS2)
 - **双向 UDP** — 主机→副机 :8888（帧数据），副机→主机 :8889（检测结果）
 - **PD 自瞄** — 动态 Kp（远距离保守、贴脸磁吸）+ Kd 阻尼 + 亚像素累加器 + 2 帧延迟补偿
 - **空间锁定** — 80px 保持锁定半径，5 帧丢失后释放，优先级感知（头部优先于身体模拟）
 - **网页调参面板** — `http://<主机IP>:9999`，手机/平板可访问，实时生效，支持所有 AimConfig 参数
+- **CS2 类别筛选** — 运行时切换只瞄 CT / 只瞄 T / 全部，支持头身瞄准偏移
 - **抗退化** — 核心绑定 + LZ4 动态加速 + UDP 非阻塞 + LIFO slot(大小1)丢弃过期帧
 - **自动恢复** — DXGI 丢失自动重建全链路（含 500ms 冷却防止高频重试）
 
@@ -121,7 +122,7 @@ SynapseX_Client.exe [端口] [引擎路径] [主机IP] [--save]
 | UDP 数据报 | ≤1424 字节（24B 头 + ≤1400B 载荷），非阻塞 4MB 缓冲 |
 | 自瞄控制器 | 动态 Kp + Kd 阻尼 + 亚像素累加器 + 2 帧延迟补偿 |
 | ROI 范围 | 64×64 到 4096×4096，运行时配置 |
-| 支持游戏 | Apex, Delta Force, Battlefield 6, Overwatch 2, Aimlabs, PUBG |
+| 支持游戏 | Apex, Delta Force, Battlefield 6, Overwatch 2, Aimlabs, PUBG, CrossFire, CS2 |
 
 ---
 
@@ -187,6 +188,8 @@ Synapse-X/
 | 3 | Overwatch 2 | `ow2_enemy_416.engine` | 1类：敌人 |
 | 4 | Aimlabs | `aimlabs_enemy_416.engine` | 1类：敌人 |
 | 5 | PUBG | `pubg_body_head_416.engine` | 2类：身体(0), 头部(1) |
+| 6 | CrossFire | `cf_body_head_416.engine` | 2类：身体(0), 头部(1) |
+| 7 | CS2 | `cs2_enemy_self_416.engine` | 2类：CT(0), T(1)，支持 classFilter 类别筛选 |
 
 模型切换通过网页面板或 PacketHeader.modelId 字段触发，副机自动热切换引擎。
 

@@ -127,9 +127,10 @@ std::vector<uint8_t> (系统内存, BGRA 连续排列)
 | headOffset | 0.20 | 头部瞄准点比例 (y1 + h*0.2) |
 | nativeW/H | 3840×2160 | 显示器原生分辨率 |
 | gameW/H | 3840×2160 | 游戏实际分辨率 |
-| modelId | 0 | 当前模型选择器 (0-5) |
+| modelId | 0 | 当前模型选择器 (0-7) |
 | kpMax | 0.75 | 近距离最大 Kp（磁吸效果） |
 | kpDecay | 0.05 | 衰减陡度 |
+| classFilter | 2 | 类别筛选：0=CT/class0, 1=T/class1, 2=全部（仅CS2） |
 
 **PD 算法（每帧，170Hz）：**
 
@@ -155,7 +156,7 @@ std::vector<uint8_t> (系统内存, BGRA 连续排列)
 - 后台线程运行 `httplib::Server`，绑定 `0.0.0.0:9999`
 - `TuningState` 受 `std::mutex` 保护
 - 手写 JSON 序列化（无第三方库依赖）
-- 可调参数：Kp, Kd, aimRange, minConfidence, deltaHeadConfidence, headOffset, kpMax, kpDecay, gameW, gameH, modelId, aimPoint, aimEnabled
+- 可调参数：Kp, Kd, aimRange, minConfidence, deltaHeadConfidence, headOffset, kpMax, kpDecay, gameW, gameH, modelId, classFilter, aimPoint, aimEnabled
 
 ---
 
@@ -223,6 +224,7 @@ SynapseX_Host.exe [目标IP] [端口] [roi宽] [roi高]
 | 4 | Aimlabs | 1类: 敌人 | classId==0, minConfidence |
 | 5 | PUBG | 2类: 身体/头部 | 同 Delta |
 | 6 | CrossFire | 2类: 身体/头部 | 同 Delta |
+| 7 | CS2 | 2类: CT(classId=0), T(classId=1) | classFilter筛选, 支持头身(headOffset), 同BF6风格 |
 
 ### 空间锁定
 

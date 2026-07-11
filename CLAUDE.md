@@ -135,6 +135,7 @@ Model ID mapping (6 games):
 | 4 | Aimlabs | 1: enemy |
 | 5 | PUBG | 2: body, head |
 | 6 | CrossFire | 2: body, head |
+| 7 | CS2 | 2: CT (classId=0), T (classId=1) |
 
 ### Client GPU Pipeline (`TrtInference::Infer()`)
 
