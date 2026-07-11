@@ -79,6 +79,7 @@ if (g_targetModelId != m_currentModelId):
 | 4 | Aimlabs | `../../model/engine/aimlabs_enemy_416.engine` |
 | 5 | PUBG | `../../model/engine/pubg_body_head_416.engine` |
 | 6 | CrossFire | `../../model/engine/cf_body_head_416.engine` |
+| 7 | CS2 | `../../model/engine/cs2_enemy_self_416.engine` |
 
 ### 2.3 NVRTC GPU 预处理
 

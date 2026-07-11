@@ -93,8 +93,9 @@ std::string TrtInference::GetModelPath(uint8_t modelId) {
         case 4:  return "../../model/engine/aimlabs_enemy_416.engine";    // Aimlabs，1类：敌人
         case 5:  return "../../model/engine/pubg_body_head_416.engine";   // PUBG，2类：身体，头部
         case 6:  return "../../model/engine/cf_body_head_416.engine";     // CrossFire，2类：身体，头部
+        case 7:  return "../../model/engine/cs2_enemy_self_416.engine";   // CS2，2类：CT, T
         default:
-            SX_LOG_ERROR("[TrtInference] 未知的 modelId={} (有效范围: 0..6)", modelId);
+            SX_LOG_ERROR("[TrtInference] 未知的 modelId={} (有效范围: 0..7)", modelId);
             return "";
     }
 }
