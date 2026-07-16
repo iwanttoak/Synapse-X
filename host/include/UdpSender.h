@@ -40,7 +40,8 @@ public:
                              uint32_t frameId,
                              uint16_t width,
                              uint16_t height,
-                             uint8_t  modelId);
+                             uint8_t  modelId,
+                             uint8_t  flags = 0);
 
     void Cleanup();
     bool IsInitialized() const { return m_initialized; }

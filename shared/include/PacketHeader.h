@@ -15,6 +15,11 @@ namespace SynapseX {
 constexpr uint16_t MAX_PAYLOAD_SIZE = 1400;
 constexpr uint16_t PROTOCOL_MAGIC   = 0x5358;  // 'SX'
 
+// ── flags 定义 ──
+enum FrameFlags : uint8_t {
+    FF_AIM_ENABLED = 0x01,   // Host 热键状态: PageUp=1, PageDown=0
+};
+
 #pragma pack(push, 1)
 struct PacketHeader {
     uint16_t magic        = PROTOCOL_MAGIC;  // 0: 协议魔数
@@ -26,7 +31,8 @@ struct PacketHeader {
     uint16_t width        = 0;               // 16: ROI 宽度
     uint16_t height       = 0;               // 18: ROI 高度
     uint8_t  modelId      = 0;               // 20: 目标模型（对应引擎文件）
-    uint8_t  padding[3]   = {0};             // 21-23: 保留
+    uint8_t  flags        = 0;               // 21: FrameFlags — Host 热键状态
+    uint8_t  padding[2]   = {0};             // 22-23: 保留
 };
 #pragma pack(pop)
 

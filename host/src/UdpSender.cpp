@@ -90,7 +90,8 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
                                      uint32_t frameId,
                                      uint16_t width,
                                      uint16_t height,
-                                     uint8_t  modelId) {
+                                     uint8_t  modelId,
+                                     uint8_t  flags) {
     if (!m_initialized) return false;
     if (totalSize == 0)   return false;
 
@@ -112,6 +113,7 @@ bool UdpSender::SendCompressedFrame(const uint8_t* compressedData,
     header->width       = width;
     header->height      = height;
     header->modelId     = modelId;
+    header->flags       = flags;
 
     const uint8_t* src = compressedData;
     uint32_t remaining = totalSize;

@@ -74,9 +74,6 @@ set(HOST_SOURCES
     src/DxgiCapturer.cpp
     src/Lz4Compressor.cpp
     src/UdpSender.cpp
-    src/UdpReplyReceiver.cpp
-    src/MouseController.cpp
-    src/HttpTuner.cpp
     src/main.cpp
 )
 
@@ -94,25 +91,8 @@ add_executable(SynapseX_Host ${HOST_SOURCES})
 target_include_directories(SynapseX_Host PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/cpp-httplib-0.47.0
 )
 target_link_libraries(SynapseX_Host PRIVATE ${HOST_LIBS})
-
-# Copy ddll64.dll to build output so MouseController can find it
-add_custom_command(TARGET SynapseX_Host POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/mousedll/ddll64.dll"
-        "$<TARGET_FILE_DIR:SynapseX_Host>/ddll64.dll"
-    COMMENT "Copying ddll64.dll to output directory"
-)
-
-# Copy web/ to build output so HttpTuner can find index.html
-add_custom_command(TARGET SynapseX_Host POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/web"
-        "$<TARGET_FILE_DIR:SynapseX_Host>/web"
-    COMMENT "Copying web/ to output directory"
-)
 
 # ── BMP capture + LZ4 compression test ─────────────────
 add_executable(SynapseX_Host_TestBmp

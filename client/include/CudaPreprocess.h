@@ -15,7 +15,12 @@
 //   只要流不在线程间共享，就是线程安全的。
 
 #include <cstdint>
+
+#ifdef SX_HAS_CUDA
 #include <cuda_runtime.h>
+#else
+using cudaStream_t = void*;
+#endif
 
 namespace SynapseX {
 

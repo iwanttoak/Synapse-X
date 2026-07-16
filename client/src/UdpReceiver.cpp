@@ -181,6 +181,7 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
     const uint16_t frameHeight  = header->height;
 
     const uint8_t modelId = header->modelId;
+    const uint8_t flags   = header->flags;
 
     if (!m_buffer.HasActiveFrame()) {
         // 第一帧 — 开始收集。
@@ -234,6 +235,7 @@ bool UdpReceiver::ProcessDatagram(const uint8_t* data, int len) {
             // 缓存尺寸供调用方解释 outFrame
             m_lastFrameWidth  = m_buffer.frameWidth;
             m_lastFrameHeight = m_buffer.frameHeight;
+            m_lastFlags       = flags;
 
             // 重置缓冲区以准备下一帧。
             m_buffer.Reset();

@@ -491,13 +491,13 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.1); }
   <div class="card">
     <div class="card-title"><span class="icon">📊</span> 实时管线</div>
     <div class="stats-grid" id="stats">
-      <div class="stat-item"><span class="stat-label">发送帧率</span><span class="stat-val" id="sFps">—</span></div>
+      <div class="stat-item"><span class="stat-label">接收帧率</span><span class="stat-val" id="sFps">—</span></div>
       <div class="stat-item"><span class="stat-label">管线延迟</span><span class="stat-val" id="sMs">—</span></div>
-      <div class="stat-item"><span class="stat-label">压缩耗时</span><span class="stat-val" id="sComp">—</span></div>
-      <div class="stat-item"><span class="stat-label">采集帧率</span><span class="stat-val" id="sCap">—</span></div>
+      <div class="stat-item"><span class="stat-label">推理耗时</span><span class="stat-val" id="sInfer">—</span></div>
+      <div class="stat-item"><span class="stat-label">推理帧率</span><span class="stat-val" id="sInfFps">—</span></div>
       <div class="stat-item"><span class="stat-label">新鲜帧</span><span class="stat-val" id="sFresh">—</span></div>
-      <div class="stat-item"><span class="stat-label">缓存帧</span><span class="stat-val" id="sCache">—</span></div>
-      <div class="stat-item"><span class="stat-label">总发送</span><span class="stat-val" id="sTotal">—</span></div>
+      <div class="stat-item"><span class="stat-label">丢弃帧</span><span class="stat-val" id="sDrop">—</span></div>
+      <div class="stat-item"><span class="stat-label">鼠标移动</span><span class="stat-val" id="sMouse">—</span></div>
       <div class="stat-item"><span class="stat-label">运行时间</span><span class="stat-val" id="sUptime">—</span></div>
     </div>
 
@@ -526,9 +526,9 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.1); }
 
   <!-- ═══ 底栏 ═══ -->
   <div class="footer">
-    <span>🔗 已连接 <span id="fHost">...</span></span>
+    <span>🔗 副机 <span id="fHost">...</span></span>
     <span>⏱ <span id="fUptime">00:00</span></span>
-    <span>Synapse-X v1.0</span>
+    <span>Synapse-X v1.0 (副机)</span>
   </div>
 
 </div>
@@ -898,13 +898,12 @@ function poll() {
       }
 
       // ── 统计 ──
-      var fps = s.sendFps || 0;
+      var fps = s.receiveFps || 0;
       var ms = s.pipelineMs || 0;
-      var comp = s.compressMs || 0;
-      var cap = s.captureFps || 0;
+      var inferMs = s.inferMs || 0;
+      var infFps = s.inferFps || 0;
       var fresh = s.freshFrames || 0;
-      var cache = s.cacheFrames || 0;
-      var total = s.totalSent || 0;
+      var drops = s.droppedFrames || 0;
 
       function cls(v, good, warn) { return v >= good ? 'good' : (v >= warn ? 'warn' : 'bad'); }
 
@@ -915,18 +914,18 @@ function poll() {
       $('sMs').className = 'stat-val ' + cls(ms >= 0 ? 1/ms : 0, 2, 1) + ' ' +
         (ms < 0.5 ? 'good' : (ms < 1.0 ? 'warn' : 'bad'));
 
-      $('sComp').textContent = comp.toFixed(3) + ' ms';
-      $('sCap').textContent = cap.toFixed(0) + ' fps';
+      $('sInfer').textContent = inferMs.toFixed(3) + ' ms';
+      $('sInfFps').textContent = infFps.toFixed(0) + ' fps';
       $('sFresh').textContent = fresh;
-      $('sCache').textContent = cache;
-      $('sTotal').textContent = total;
-      var uptimeSec = total / 170;
+      $('sDrop').textContent = drops;
+      $('sMouse').textContent = (s.target && s.target.active) ? '⚡' : '—';
+      var uptimeSec = fresh / 170;
       $('sUptime').textContent = formatDuration(uptimeSec);
 
       // ── 顶部摘要 ──
       $('mFps').textContent = fps.toFixed(0);
       $('mMs').textContent = ms.toFixed(1) + 'ms';
-      $('mDrop').textContent = '0%';  // 后端目前不返回丢包率
+      $('mDrop').textContent = drops > 0 ? drops + '丢' : '0%';
 
       // ── 延迟微趋势 ──
       sparkData.push(ms);
@@ -936,12 +935,16 @@ function poll() {
       // ── 状态徽章 ──
       var badge = $('statusBadge');
       var aimOn = s.config ? s.config.aimEnabled !== false : true;
-      if (aimOn && fps > 0) {
+      var hostOk = s.hostAimEnabled !== false;
+      if (aimOn && hostOk && fps > 0) {
         badge.className = 'status-badge running';
         $('statusText').textContent = '运行中';
       } else if (!aimOn) {
         badge.className = 'status-badge paused';
-        $('statusText').textContent = '已暂停';
+        $('statusText').textContent = '副机已暂停';
+      } else if (!hostOk) {
+        badge.className = 'status-badge paused';
+        $('statusText').textContent = '主机热键关闭';
       } else {
         badge.className = 'status-badge paused';
         $('statusText').textContent = '等待数据…';

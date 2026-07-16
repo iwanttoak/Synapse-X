@@ -69,6 +69,7 @@ public:
     // ── 上一帧尺寸（TryReceive 返回 true 后有效）────────────
     uint16_t GetLastFrameWidth()  const { return m_lastFrameWidth; }
     uint16_t GetLastFrameHeight() const { return m_lastFrameHeight; }
+    uint8_t  GetLastFlags()       const { return m_lastFlags; }
 
     // ── 统计信息 ──────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ private:
     // ── 上一帧尺寸 ─────────────────────────────────────────
     uint16_t m_lastFrameWidth  = 0;
     uint16_t m_lastFrameHeight = 0;
+    uint8_t  m_lastFlags       = 0;
 
     // ── 统计信息 ─────────────────────────────────────────────
     uint64_t m_totalFramesReceived = 0;

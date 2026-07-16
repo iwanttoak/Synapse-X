@@ -12,13 +12,15 @@
 //   2: bf6_enemy_self_416    3: ow2_enemy_416
 
 #include "TrtInference.h"
-#include "CudaPreprocess.h"
 #include "Log.h"
 #include "PacketHeader.h"  // g_targetModelId extern
 
+#ifdef SX_HAS_INFERENCE
+#include "CudaPreprocess.h"
 #include <cuda_runtime.h>
 #include <NvInfer.h>
 #include <NvInferRuntime.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -30,6 +32,7 @@
 std::atomic<uint8_t> g_targetModelId{0};
 
 namespace SynapseX {
+#ifdef SX_HAS_INFERENCE
 
 // ═══════════════════════════════════════════════════════════════
 //  TRT 日志器
@@ -387,5 +390,39 @@ void TrtInference::Cleanup() {
     m_initialized = false;
     m_currentModelId = 255;
 }
+
+#else
+
+TrtInference::~TrtInference() {
+    Cleanup();
+}
+
+bool TrtInference::Initialize() {
+    SX_LOG_WARN("[TrtInference] 推理不可用；CUDA/TensorRT 未检测到");
+    return false;
+}
+
+bool TrtInference::LoadEngine(uint8_t) {
+    return false;
+}
+
+bool TrtInference::LoadEngineByPath(const std::string&, uint8_t) {
+    return false;
+}
+
+bool TrtInference::SetupStream() {
+    return false;
+}
+
+std::vector<Detection> TrtInference::Infer(const uint8_t*, float) {
+    return {};
+}
+
+void TrtInference::Cleanup() {
+    m_initialized = false;
+    m_currentModelId = 255;
+}
+
+#endif
 
 } // namespace SynapseX

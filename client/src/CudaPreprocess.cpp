@@ -7,6 +7,7 @@
 #include "CudaPreprocess.h"
 #include "Log.h"
 
+#ifdef SX_HAS_CUDA
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include <nvrtc.h>
@@ -15,8 +16,12 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#else
+#include <string>
+#endif
 
 namespace SynapseX {
+#ifdef SX_HAS_CUDA
 
 // ═══════════════════════════════════════════════════════════════
 //  CUDA 内核源码（嵌入式字符串）
@@ -186,5 +191,24 @@ void LaunchBgra8ToFp32ChwRgb(
     (void)cu;
 #endif
 }
+
+#else
+
+bool InitCudaPreprocess() {
+    SX_LOG_WARN("[CudaPreprocess] CUDA 未启用；跳过初始化");
+    return false;
+}
+
+void LaunchBgra8ToFp32ChwRgb(
+    const uint8_t*,
+    float*,
+    int,
+    int,
+    cudaStream_t)
+{
+    SX_LOG_WARN("[CudaPreprocess] CUDA 未启用；跳过内核执行");
+}
+
+#endif
 
 } // namespace SynapseX

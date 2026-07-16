@@ -79,7 +79,7 @@ target_compile_definitions(SynapseX_Shared INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_
 # ═══════════════════════════════════════════════════════════════
 set(SX_CUDA_FOUND FALSE)
 
-find_package(CUDAToolkit REQUIRED)
+find_package(CUDAToolkit)
 if(CUDAToolkit_FOUND)
     message(STATUS "[SynapseX Client] CUDA Toolkit found via find_package:")
     message(STATUS "  Version:        ${CUDAToolkit_VERSION}")
@@ -89,15 +89,18 @@ if(CUDAToolkit_FOUND)
     set(SX_CUDA_INCLUDE_DIRS ${CUDAToolkit_INCLUDE_DIRS})
     set(SX_CUDA_LIB_DIR     "${CUDAToolkit_TARGET_DIR}/lib/x64")
 else()
-    message(WARNING "[SynapseX Client] CUDA NOT found. "
-                    "TensorRT inference will be disabled.")
+    message(WARNING "[SynapseX Client] CUDA Toolkit not found. "
+                    "Inference module will be disabled.")
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-#  TensorRT 10.16.1.11 — 手动寻址
+#  TensorRT — 手动寻址或用户覆盖
 # ═══════════════════════════════════════════════════════════════
 set(SX_TENSORRT_FOUND FALSE)
-set(TRT_BASE_PATH "C:/Program Files/NVIDIA/TensorRT-10.16.1.11.Windows.amd64.cuda-13.2/TensorRT-10.16.1.11")
+set(TRT_BASE_PATH "$ENV{TRT_BASE_PATH}" CACHE PATH "TensorRT installation path")
+if(NOT TRT_BASE_PATH)
+    set(TRT_BASE_PATH "C:/Program Files/NVIDIA/TensorRT-10.16.1.11.Windows.amd64.cuda-13.2/TensorRT-10.16.1.11")
+endif()
 
 if(EXISTS "${TRT_BASE_PATH}/include/NvInfer.h")
     message(STATUS "[SynapseX Client] TensorRT found at: ${TRT_BASE_PATH}")
@@ -109,8 +112,7 @@ if(EXISTS "${TRT_BASE_PATH}/include/NvInfer.h")
     endif()
 
     if(SX_CUDA_FOUND)
-        message(STATUS "[SynapseX Client] CUDA + TensorRT 10.16: both available. "
-                       "Enabling inference module.")
+        message(STATUS "[SynapseX Client] CUDA + TensorRT available. Enabling inference module.")
     endif()
 else()
     message(WARNING "[SynapseX Client] TensorRT NOT found at ${TRT_BASE_PATH}. "
@@ -133,7 +135,7 @@ if(SX_CUDA_FOUND AND SX_TENSORRT_FOUND)
         ${SX_CUDA_INCLUDE_DIRS}
         ${SX_TRT_INCLUDE_DIRS}
     )
-    target_compile_definitions(SynapseX_Inference PRIVATE NOMINMAX)
+    target_compile_definitions(SynapseX_Inference PRIVATE NOMINMAX SX_HAS_CUDA=1 SX_HAS_INFERENCE=1)
     target_link_libraries(SynapseX_Inference PUBLIC
         ${SX_TRT_LIB_DIR}/nvinfer_10.lib
         ${SX_TRT_LIB_DIR}/nvinfer_plugin_10.lib
@@ -151,7 +153,9 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 set(CLIENT_SOURCES
     src/UdpReceiver.cpp
-    src/UdpReplySender.cpp
+    src/PdController.cpp
+    src/MouseDevice.cpp
+    src/HttpTuner.cpp
     src/TrtInference.cpp
     src/main.cpp
 )
@@ -162,19 +166,39 @@ set(CLIENT_LIBS
     ws2_32
 )
 
+# ── MAKCU 鼠标控制器（可选）─────────────────────────────
+find_package(makcu-cpp)
+
 # ── Main executable ────────────────────────────────────
 add_executable(SynapseX_Client ${CLIENT_SOURCES})
 target_include_directories(SynapseX_Client PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/cpp-httplib-0.47.0
 )
 target_compile_definitions(SynapseX_Client PRIVATE NOMINMAX)
+if(SX_CUDA_FOUND)
+    target_compile_definitions(SynapseX_Client PRIVATE SX_HAS_CUDA=1)
+    target_include_directories(SynapseX_Client PRIVATE ${SX_CUDA_INCLUDE_DIRS})
+    if(NOT SX_HAS_INFERENCE)
+        target_sources(SynapseX_Client PRIVATE src/CudaPreprocess.cpp)
+    endif()
+    list(APPEND CLIENT_LIBS ${SX_CUDA_LIB_DIR}/cudart.lib ${SX_CUDA_LIB_DIR}/cuda.lib ${SX_CUDA_LIB_DIR}/nvrtc.lib)
+endif()
+if(SX_HAS_INFERENCE)
+    target_compile_definitions(SynapseX_Client PRIVATE SX_HAS_INFERENCE=1)
+endif()
+if(makcu-cpp_FOUND)
+    target_compile_definitions(SynapseX_Client PRIVATE SX_HAS_MAKCU=1)
+    target_link_libraries(SynapseX_Client PRIVATE makcu::makcu-cpp)
+else()
+    message(WARNING "[SynapseX Client] makcu-cpp not found. Mouse control will be disabled.")
+endif()
 target_link_libraries(SynapseX_Client PRIVATE ${CLIENT_LIBS})
 
 # 链接 CUDA + TensorRT 推理模块
 if(SX_HAS_INFERENCE)
     target_include_directories(SynapseX_Client PRIVATE
-        ${SX_CUDA_INCLUDE_DIRS}
         ${SX_TRT_INCLUDE_DIRS}
     )
     target_link_libraries(SynapseX_Client PRIVATE
@@ -186,6 +210,14 @@ if(SX_HAS_INFERENCE)
     )
 endif()
 
+# 复制 web/ 面板到输出目录
+add_custom_command(TARGET SynapseX_Client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/web"
+        "$<TARGET_FILE_DIR:SynapseX_Client>/web"
+    COMMENT "Copying web/ to output directory"
+)
+
 # ── Summary ────────────────────────────────────────────
 message(STATUS "")
 message(STATUS "══════════════════════════════════════════════")
@@ -196,7 +228,8 @@ message(STATUS "  Shared:        ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include")
 message(STATUS "  CUDA found:    ${SX_CUDA_FOUND}")
 message(STATUS "  TensorRT found: ${SX_TENSORRT_FOUND}")
 message(STATUS "  Inference:     ${SX_HAS_INFERENCE}")
-message(STATUS "  Winsock2:      ws2_32")
+message(STATUS "  MAKCU:         makcu::makcu-cpp")
+message(STATUS "  HttpTuner:     cpp-httplib :9999")
 if(SX_CUDA_FOUND)
     message(STATUS "  CUDA:          ${SX_CUDA_INCLUDE_DIRS}")
 endif()
